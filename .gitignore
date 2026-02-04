@@ -18,3 +18,4 @@ C:/braid_target
 node_modules/
 dist/
 .tauri
+/references/
