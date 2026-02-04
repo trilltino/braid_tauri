@@ -1,0 +1,129 @@
+/* Mail Feed & Dashboard */
+.mail-dashboard-layout { display: flex; flex: 1; height: calc(100vh - 80px); position: relative; overflow: hidden; }
+
+.mail-sidebar {
+    width: 380px; background: rgba(18, 4, 34, 0.4); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; backdrop-filter: blur(20px); z-index: 5;
+}
+
+.mail-main-pane { flex: 1; display: flex; flex-direction: column; background: var(--bg-primary); position: relative; overflow: hidden; }
+
+.sidebar-search { padding: 16px; border-bottom: 1px solid var(--border); }
+.sidebar-search input { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.05); color: var(--text-main); }
+.sidebar-search input:focus { border-color: var(--accent); box-shadow: 0 0 15px var(--accent-glow); outline: none; }
+
+.mail-feed-list { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+
+/* Subscribe Prompt */
+#mail-subscribe-prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px 24px;
+    min-height: 300px;
+    background: rgba(157, 80, 187, 0.05);
+    border-radius: 20px;
+    border: 1px dashed var(--border);
+    margin: 12px;
+}
+
+#mail-subscribe-prompt h3 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text-main);
+}
+
+#mail-subscribe-prompt p {
+    color: var(--text-dim);
+    margin-bottom: 24px;
+    max-width: 280px;
+    line-height: 1.5;
+}
+
+#mail-subscribe-btn {
+    padding: 14px 32px;
+    font-size: 16px;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+    border: none;
+    border-radius: 12px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 15px var(--accent-glow);
+}
+
+#mail-subscribe-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px var(--accent-glow);
+}
+
+#mail-subscribe-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Right pane subscribe section */
+#mail-right-subscribe-section {
+    text-align: center;
+    padding: 40px;
+}
+
+#mail-right-subscribe-section h2 {
+    font-size: 28px;
+    margin-bottom: 16px;
+}
+
+#mail-right-subscribe-section p {
+    font-size: 16px;
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+#right-subscribe-btn {
+    padding: 16px 40px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.mail-item {
+    padding: 16px; border-radius: 14px; background: rgba(255, 255, 255, 0.03);
+    cursor: pointer; transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1); position: relative;
+}
+
+.mail-item.active { background: rgba(157, 80, 187, 0.15); border: 1px solid rgba(157, 80, 187, 0.3); }
+
+.feed-card {
+    padding: 24px; border-radius: 20px; background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border); backdrop-filter: blur(20px); transition: var(--transition);
+}
+
+.feed-card:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3); }
+
+.feed-card-header { display: flex; justify-content: space-between; }
+.feed-origin { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; color: var(--accent); }
+.feed-card-title { font-size: 18px; font-weight: 600; }
+.feed-card-body { font-size: 14px; color: var(--text-dim); line-height: 1.6; }
+
+/* Compose Overlay */
+.compose-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+
+.compose-modal {
+    width: 600px; background: #1a1b26; border: 1px solid var(--border-bright);
+    border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    display: flex; flex-direction: column; overflow: hidden;
+}
+
+.compose-header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
+.compose-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.compose-body input, .compose-body textarea { background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; color: white; }
+.compose-body textarea { min-height: 200px; resize: none; }
+.compose-footer { padding: 20px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; }

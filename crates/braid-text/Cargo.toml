@@ -1,0 +1,16 @@
+[package]
+name = "braid-text"
+version = "0.1.0"
+edition = "2021"
+authors = ["Braid Team"]
+license = "MIT OR Apache-2.0"
+description = "Simpleton merge-type and text diffing for Braid-HTTP"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+braid-http = { path = "../braid-http" }
+braid-common = { path = "../braid-common" }
+tracing = "0.1"
+str_indices = "0.4"
+regex = "1.10"

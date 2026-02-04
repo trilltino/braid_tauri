@@ -1,0 +1,6 @@
+braid_sync
+logs
+*.log
+target
+target_*
+C:\braid_target

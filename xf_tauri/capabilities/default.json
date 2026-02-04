@@ -1,0 +1,16 @@
+{
+    "identifier": "default",
+    "description": "Default permissions for the app",
+    "local": true,
+    "windows": [
+        "*"
+    ],
+    "permissions": [
+        "core:default",
+        "core:event:default",
+        "core:event:allow-listen",
+        "core:event:allow-emit",
+        "core:window:default",
+        "core:webview:default"
+    ]
+}

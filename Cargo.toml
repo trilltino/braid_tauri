@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "xf_tauri",
+    "crates/braid-core",
+    "crates/braidfs-daemon",
+    "crates/braidfs-nfs",
+    "crates/braid-blob",
+    "crates/braid-http",
+    "crates/server",
+    "crates/braid-common",
+    "crates/braid-text",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Braid Team"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+genai = { version = "0.5.2", default-features = false, features = ["deepseek"] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+incremental = false
+opt-level = "s"
+strip = true

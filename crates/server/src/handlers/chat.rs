@@ -1,0 +1,356 @@
+//! Chat handlers using pure Braid protocol
+//!
+//! All endpoints use braid-http protocol headers and braid-core CRDT.
+//! NO SSE - subscriptions are handled by braid_subscribe.rs
+
+use crate::{
+    models::{
+        ChatSnapshot, CreateMessageInput, MessageType, MessageTypeInput,
+        BlobRef, RoomSyncStatus, SyncStatus,
+    },
+    config::AppState,
+};
+use axum::{
+    extract::{Path, State, Multipart},
+    http::{HeaderMap, StatusCode},
+    response::Json,
+};
+use braid_http::protocol::{
+    constants::headers,
+    headers::{parse_version_header, format_version_header},
+};
+use tracing::{info, warn, error};
+
+/// GET /chat/:room_id
+/// 
+/// Braid protocol endpoint for fetching chat room state.
+/// Returns current messages as JSON with Braid version headers.
+pub async fn get_chat_room(
+    Path(room_id): Path<String>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<(HeaderMap, Json<ChatSnapshot>), StatusCode> {
+    info!("GET /chat/{}", room_id);
+
+    // Parse Braid version header if present
+    let since_version = headers
+        .get(&headers::VERSION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| parse_version_header(v).ok())
+        .and_then(|versions| versions.first().map(|v| v.to_string()));
+
+    // Get or create room
+    let room_lock = state.store
+        .get_or_create_room(&room_id, Some("anonymous"))
+        .await
+        .map_err(|e| {
+            error!("Failed to get/create room: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let room = room_lock.read().await;
+
+    // Get messages (optionally since a specific version)
+    let messages = state.store
+        .get_messages(&room_id, since_version.as_deref())
+        .await
+        .map_err(|e| {
+            error!("Failed to get messages: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // Build response headers using braid-http
+    let mut response_headers = HeaderMap::new();
+    let current_version = room.crdt.get_frontier()
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "0@server".to_string());
+    
+    response_headers.insert(
+        http::header::CONTENT_TYPE,
+        "application/json".parse().unwrap(),
+    );
+    response_headers.insert(
+        headers::VERSION.clone(),
+        format_version_header(&[braid_http::types::Version::String(current_version.clone())])
+            .parse()
+            .unwrap(),
+    );
+    response_headers.insert(
+        headers::CURRENT_VERSION.clone(),
+        format_version_header(&[braid_http::types::Version::String(current_version)])
+            .parse()
+            .unwrap(),
+    );
+
+    // Add Braid protocol support headers
+    response_headers.insert(
+        http::HeaderName::from_static("range-request-allow-methods"),
+        "PATCH, PUT".parse().unwrap(),
+    );
+    response_headers.insert(
+        http::HeaderName::from_static("range-request-allow-units"),
+        "json".parse().unwrap(),
+    );
+
+    let snapshot = ChatSnapshot { 
+        room: room.room.clone(),
+        messages,
+    };
+    
+    Ok((response_headers, Json(snapshot)))
+}
+
+/// PUT /chat/:room_id
+/// 
+/// Braid protocol endpoint for adding a message.
+/// Uses antimatter merge type for CRDT consistency.
+pub async fn put_message(
+    Path(room_id): Path<String>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(input): Json<CreateMessageInput>,
+) -> Result<(HeaderMap, StatusCode), StatusCode> {
+    info!("PUT /chat/{}", room_id);
+
+    // Extract sender from header (in real app, use auth)
+    let sender = headers
+        .get("x-user")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("anonymous")
+        .to_string();
+
+    // Convert message type
+    let msg_type = match input.message_type {
+        MessageTypeInput::Text => MessageType::Text,
+        MessageTypeInput::Image { width, height } => MessageType::Image { width, height },
+        MessageTypeInput::File { filename, size } => MessageType::File { filename, size },
+    };
+
+    // Convert blob refs
+    let blob_refs = input.blob_refs.map(|refs| {
+        refs.into_iter()
+            .map(|r| BlobRef {
+                hash: r.hash,
+                content_type: r.content_type,
+                filename: r.filename,
+                size: r.size,
+                inline_data: None,
+            })
+            .collect()
+    }).unwrap_or_default();
+
+    // Create message using CRDT
+    let message = state.store
+        .add_message(&room_id, &sender, &input.content, msg_type, input.reply_to, blob_refs)
+        .await
+        .map_err(|e| {
+            error!("Failed to create message: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // Check for AI trigger
+    if let Some(ref ai_manager) = state.ai_manager {
+        match ai_manager.process_message(&room_id, &message).await {
+            Ok(Some(bot_msg)) => {
+                info!("[@BraidBot] Responded in room {}", room_id);
+                // Bot response is already added to store
+            }
+            Ok(None) => {}
+            Err(e) => {
+                warn!("[@BraidBot] Failed to process message: {}", e);
+            }
+        }
+    }
+
+    // Sync to daemon if available (braidfs-daemon)
+    if let Some(ref daemon) = state.daemon {
+        if let Err(e) = daemon.sync_room_to_daemon(&room_id).await {
+            warn!("Failed to sync room {} to daemon: {}", room_id, e);
+        }
+    }
+
+    info!("Created message {} in room {} (version {})", 
+        message.id, room_id, message.version);
+
+    // Return updated version headers using braid-http
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        headers::VERSION.clone(),
+        format_version_header(&[braid_http::types::Version::String(message.version.clone())])
+            .parse()
+            .unwrap(),
+    );
+    
+    Ok((response_headers, StatusCode::OK))
+}
+
+/// POST /blobs
+/// 
+/// Upload a blob (image/file) for chat attachments.
+/// Uses braid-blob for storage.
+pub async fn upload_blob(
+    State(state): State<AppState>,
+    mut multipart: Multipart,
+) -> Result<Json<BlobRef>, StatusCode> {
+    use bytes::Bytes;
+    use sha2::{Digest, Sha256};
+
+    info!("POST /blobs - uploading blob");
+
+    // Process multipart form
+    let mut filename = None;
+    let mut content_type = None;
+    let mut data = None;
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        error!("Failed to read multipart field: {}", e);
+        StatusCode::BAD_REQUEST
+    })? {
+        let name = field.name().unwrap_or("").to_string();
+        
+        if name == "file" {
+            filename = field.file_name().map(|s| s.to_string());
+            content_type = field.content_type().map(|s| s.to_string());
+            data = Some(field.bytes().await.map_err(|e| {
+                error!("Failed to read file data: {}", e);
+                StatusCode::BAD_REQUEST
+            })?);
+        }
+    }
+
+    let data = data.ok_or(StatusCode::BAD_REQUEST)?;
+    let filename = filename.unwrap_or_else(|| "unnamed".to_string());
+    let content_type = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+
+    // Compute hash
+    let mut hasher = Sha256::new();
+    hasher.update(&data);
+    let hash = format!("{:x}", hasher.finalize());
+
+    // Store in blob store (braid-blob)
+    let version = vec![braid_http::types::Version::from(hash.clone())];
+    let parents = vec![];
+
+    let data_len = data.len();
+    state.store.blob_store()
+        .put(&hash, Bytes::from(data), version, parents, Some(content_type.clone()))
+        .await
+        .map_err(|e| {
+            error!("Failed to store blob: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    info!("Stored blob {} ({} bytes)", hash, data_len);
+
+    let blob_ref = BlobRef {
+        hash,
+        content_type,
+        filename,
+        size: data_len as u64,
+        inline_data: None,
+    };
+
+    Ok(Json(blob_ref))
+}
+
+/// GET /blobs/:hash
+/// 
+/// Download a blob from braid-blob store.
+pub async fn get_blob(
+    Path(hash): Path<String>,
+    State(state): State<AppState>,
+) -> Result<(HeaderMap, axum::body::Bytes), StatusCode> {
+    info!("GET /blobs/{}", hash);
+
+    let (data, meta) = state.store.blob_store()
+        .get(&hash)
+        .await
+        .map_err(|e| {
+            error!("Failed to get blob: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        http::header::CONTENT_TYPE,
+        meta.content_type.unwrap_or_else(|| "application/octet-stream".to_string())
+            .parse()
+            .unwrap(),
+    );
+
+    Ok((headers, data))
+}
+
+/// GET /chat/:room_id/status
+/// 
+/// Get sync status for a room from daemon.
+pub async fn get_room_status(
+    Path(room_id): Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<RoomSyncStatus>, StatusCode> {
+    let status = if let Some(ref daemon) = state.daemon {
+        daemon.get_sync_status(&room_id).await
+    } else {
+        RoomSyncStatus {
+            room_id: room_id.clone(),
+            status: SyncStatus::Offline,
+            last_sync: None,
+            pending_changes: 0,
+        }
+    };
+
+    Ok(Json(status))
+}
+
+/// POST /chat/:room_id/drafts
+/// 
+/// Save a draft message (offline support)
+pub async fn save_draft(
+    Path(room_id): Path<String>,
+    State(state): State<AppState>,
+    Json(input): Json<CreateMessageInput>,
+) -> Result<StatusCode, StatusCode> {
+    let msg_type = match input.message_type {
+        MessageTypeInput::Text => MessageType::Text,
+        MessageTypeInput::Image { width, height } => MessageType::Image { width, height },
+        MessageTypeInput::File { filename, size } => MessageType::File { filename, size },
+    };
+
+    state.store
+        .save_draft(&room_id, &input.content, msg_type)
+        .await
+        .map_err(|e| {
+            error!("Failed to save draft: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(StatusCode::CREATED)
+}
+
+/// GET /chat/:room_id/drafts
+/// 
+/// Get draft messages for a room
+pub async fn get_drafts(
+    Path(room_id): Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::models::DraftMessage>>, StatusCode> {
+    let drafts = state.store.get_drafts(&room_id).await;
+    Ok(Json(drafts))
+}
+
+/// DELETE /chat/:room_id/drafts
+/// 
+/// Clear drafts for a room (after successful sync)
+pub async fn clear_drafts(
+    Path(room_id): Path<String>,
+    State(state): State<AppState>,
+) -> Result<StatusCode, StatusCode> {
+    state.store.clear_drafts(&room_id).await.map_err(|e| {
+        error!("Failed to clear drafts: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(StatusCode::OK)
+}

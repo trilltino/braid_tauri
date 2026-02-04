@@ -1,0 +1,103 @@
+warning: xf_tauri v0.1.0 (C:\Users\isich\braid_tauri\xf_tauri) ignoring invalid dependency `braidfs-daemon` which is missing a lib target
+    Blocking waiting for file lock on build directory
+    Checking braid-core v0.1.4 (C:\Users\isich\braid_tauri\crates\braid-core)
+warning: unused import: `json`
+ --> crates\braid-core\src\core\merge\simpleton.rs:6:18
+  |
+6 | use serde_json::{json, Value};
+  |                  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `self`
+ --> crates\braid-core\src\core\server\middleware.rs:5:33
+  |
+5 | use crate::core::protocol_mod::{self, constants::headers};
+  |                                 ^^^^
+
+warning: unused import: `crate::fs::sync::sync_local_to_remote`
+ --> crates\braid-core\src\fs\watcher.rs:3:5
+  |
+3 | use crate::fs::sync::sync_local_to_remote;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `merge`
+  --> crates\braid-core\src\fs\server_handlers.rs:67:29
+   |
+67 |                         let merge = merges.entry(path.clone()).or_insert_with(|| {
+   |                             ^^^^^ help: if this is intentional, prefix it with an underscore: `_merge`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: method `simple_diff` is never used
+  --> crates\braid-core\src\core\merge\simpleton.rs:28:8
+   |
+18 | impl SimpletonMergeType {
+   | ----------------------- method in this implementation
+...
+28 |     fn simple_diff(&self, old_text: &str, new_text: &str) -> (usize, usize, String) {
+   |        ^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: function `handle_push_binary` is never used
+   --> crates\braid-core\src\fs\api.rs:478:10
+    |
+478 | async fn handle_push_binary(
+    |          ^^^^^^^^^^^^^^^^^^
+
+warning: `braid-core` (lib) generated 6 warnings (run `cargo fix --lib -p braid-core` to apply 3 suggestions)
+    Checking xf_tauri v0.1.0 (C:\Users\isich\braid_tauri\xf_tauri)
+warning: unused import: `error`
+  --> xf_tauri\src\braid_mail\mod.rs:11:15
+   |
+11 | use tracing::{error, info, warn};
+   |               ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `warn`
+  --> xf_tauri\src\local_sync\mod.rs:17:28
+   |
+17 | use tracing::{error, info, warn};
+   |                            ^^^^
+
+warning: unused variable: `pool`
+   --> xf_tauri\src\backend\db.rs:176:24
+    |
+176 | pub async fn seed_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    |                        ^^^^ help: if this is intentional, prefix it with an underscore: `_pool`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: variable `relativePath` should have a snake case name
+   --> xf_tauri\src\commands\mod.rs:614:33
+    |
+614 | pub async fn read_explorer_file(relativePath: String) -> Result<String, String> {
+    |                                 ^^^^^^^^^^^^ help: convert the identifier to snake case: `relative_path`
+    |
+    = note: `#[warn(non_snake_case)]` on by default
+
+warning: variable `relativePath` should have a snake case name
+   --> xf_tauri\src\commands\mod.rs:621:34
+    |
+621 | pub async fn write_explorer_file(relativePath: String, content: String) -> Result<(), String> {
+    |                                  ^^^^^^^^^^^^ help: convert the identifier to snake case: `relative_path`
+
+warning: `xf_tauri` (lib) generated 5 warnings (run `cargo fix --lib -p xf_tauri` to apply 2 suggestions)
+warning: unused variable: `alice`
+  --> xf_tauri\src\bin\social_sim.rs:59:9
+   |
+59 |     let alice = xf_tauri::auth::AuthResponse {
+   |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_alice`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `bob`
+  --> xf_tauri\src\bin\social_sim.rs:77:9
+   |
+77 |     let bob = xf_tauri::auth::AuthResponse {
+   |         ^^^ help: if this is intentional, prefix it with an underscore: `_bob`
+
+warning: `xf_tauri` (bin "social_sim") generated 2 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 32.50s

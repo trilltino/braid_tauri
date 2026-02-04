@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+    <h1>Explorer Debugger</h1>
+    <button onclick="checkTree()">Check Tree Data</button>
+    <pre id="output">...</pre>
+    <script>
+        const { invoke } = window.__TAURI__.core;
+
+        async function checkTree() {
+            try {
+                const data = await invoke('get_braid_explorer_tree', { path: '/' });
+                document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+                console.log("Tree Data:", data);
+            } catch (e) {
+                document.getElementById('output').textContent = "Error: " + e;
+            }
+        }
+    </script>
+</body>
+
+</html>
