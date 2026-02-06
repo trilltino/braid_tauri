@@ -68,11 +68,11 @@ impl DebouncedSyncManager {
                 let now = Instant::now();
                 let mut p = pending_clone.write().await;
 
-                // If it's the first request for this URL in a while, trigger it sooner
+                // Live sync: minimal debounce for real-time collaboration
                 let deadline = if !p.contains_key(&req.url) {
-                    now + Duration::from_millis(50)
+                    now + Duration::from_millis(10)  // First keystroke: 10ms
                 } else {
-                    now + debounce_duration
+                    now + debounce_duration  // Subsequent: from config (default 10ms)
                 };
 
                 info!(

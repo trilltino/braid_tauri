@@ -6,8 +6,7 @@ export function showToast(message, type = 'info', duration = 4000) {
     if (!container) return;
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    let icon = (type === 'success') ? '✅' : (type === 'error' ? '❌' : '🔔');
-    toast.innerHTML = `<span class="toast-icon">${icon}</span> <span class="toast-msg">${message}</span>`;
+    toast.innerHTML = `<span class="toast-msg">${message}</span>`;
     container.appendChild(toast);
     setTimeout(() => {
         toast.classList.add('fade-out');

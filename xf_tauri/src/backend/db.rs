@@ -173,7 +173,7 @@ pub async fn init_db() -> Result<SqlitePool, sqlx::Error> {
     Ok(pool)
 }
 
-pub async fn seed_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+pub async fn seed_data(_pool: &SqlitePool) -> Result<(), sqlx::Error> {
     // Purge dummy data as requested by user to start with a clean slate
     // sqlx::query("DELETE FROM messages").execute(pool).await?;
     // sqlx::query("DELETE FROM conversations")

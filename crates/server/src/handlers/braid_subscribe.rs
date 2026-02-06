@@ -2,39 +2,137 @@
 //!
 //! Uses braid-http and braid-core for all subscription handling.
 //! NO SSE - pure Braid protocol throughout.
+//!
+//! # Braid Protocol Format (xfmail-style)
+//!
+//! Per draft-toomim-httpbis-braid-http-04, subscriptions use:
+//! - HTTP 209 status code for subscription responses
+//! - Multipart message boundaries for updates
+//! - Version and Parents headers for each update
+//! - Merge-Type header for conflict resolution strategy
+//!
+//! # Wire Format
+//!
+//! ```text
+//! HTTP/1.1 209 Subscription
+//! Content-Type: application/json
+//! Subscribe: true
+//! Merge-Type: diamond
+//!
+//! Version: "v1"
+//! Content-Length: 42
+//!
+//! {"id": "...", "content": "Hello"}
+//!
+//! Version: "v2"
+//! Parents: "v1"
+//! Content-Length: 45
+//!
+//! {"id": "...", "content": "Hello World"}
+//! ```
 
 use crate::config::AppState;
+use crate::models::Message;
 use crate::store::json_store::UpdateType;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
+    http::{header, HeaderMap, StatusCode},
+    response::Response,
     body::Body,
 };
+use bytes::Bytes;
 use braid_http::protocol::{
     constants::headers,
 };
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::time::Duration;
-use tracing::{info, debug, error};
+use tracing::{info, debug, error, warn};
 
+/// Format a Braid update for the wire (multipart format).
+/// Based on xfmail's implementation for spec compliance.
+fn format_braid_update(message: &Message, crdt_version: Option<&str>) -> Bytes {
+    let body = serde_json::to_string(message).unwrap_or_default();
+    let mut update = String::new();
+    
+    // Version header (required)
+    let version = crdt_version.unwrap_or(&message.version);
+    update.push_str(&format!("Version: \"{}\"\r\n", version));
+    
+    // Parents header (if any)
+    if !message.parents.is_empty() {
+        let parents: Vec<String> = message
+            .parents
+            .keys()
+            .map(|p| format!("\"{}\"", p))
+            .collect();
+        update.push_str(&format!("Parents: {}\r\n", parents.join(", ")));
+    }
+    
+    // Content-Length header (required for multipart)
+    update.push_str(&format!("Content-Length: {}\r\n", body.len()));
+    update.push_str("\r\n");
+    update.push_str(&body);
+    update.push_str("\r\n\r\n");
+
+    // Log for Inspector in formal Braid-HTTP format
+    let patch = format!(
+        "[{{\"unit\": \"json\", \"range\": \"[0:0]\", \"content\": {}}}]",
+        body
+    );
+    info!(
+        target: "braid_inspector",
+        "[BRAID-CHAT] Update:\n\n\
+         HTTP/1.1 209 Subscription\n\
+         Host: braid.org\n\
+         Version: \"{}\"\n\
+         Parents: {}\n\
+         Author: {}\n\
+         Merge-Type: diamond\n\
+         Patches: 1\n\
+         Content-Type: application/json\n\
+         Content-Length: {}\n\
+         \n\
+         {}",
+        version,
+        if !message.parents.is_empty() {
+            message
+                .parents
+                .keys()
+                .map(|p| format!("\"{}\"", p))
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            "[]".to_string()
+        },
+        message.sender,
+        patch.len(),
+        patch
+    );
+
+    Bytes::from(update)
+}
+
+/// Handle pure Braid subscription for conversation messages.
+///
 /// GET /chat/{room_id}/subscribe
-/// 
-/// PURE BRAID PROTOCOL SUBSCRIPTION
-/// 
+///
+/// This handler implements true Braid-HTTP subscriptions (xfmail-style):
+/// - Returns HTTP 209 status for subscriptions
+/// - Uses multipart format for streaming updates
+/// - Includes Version and Parents headers per update
+/// - Specifies Merge-Type: diamond for CRDT conflict resolution
+///
 /// Headers:
 ///   - Subscribe: true (required)
 ///   - Heartbeats: 30s (optional)
 ///   - Version: "10@server" (optional - for resuming)
-/// 
-/// Uses braid-http protocol for streaming updates.
-/// NO SSE - pure Braid headers and data.
+///   - Parents: "v1", "v2" (optional - for catch-up sync)
 pub async fn braid_subscribe(
     Path(room_id): Path<String>,
     State(state): State<AppState>,
-    headers: axum::http::HeaderMap,
-) -> Result<impl IntoResponse, StatusCode> {
+    headers: HeaderMap,
+) -> Result<Response<Body>, StatusCode> {
     info!("[BraidSubscribe] /chat/{}", room_id);
 
     // Check for Subscribe header (Braid protocol requirement)
@@ -42,6 +140,23 @@ pub async fn braid_subscribe(
         error!("[BraidSubscribe] Missing Subscribe header");
         return Err(StatusCode::BAD_REQUEST);
     }
+
+    // Parse Parents header for catch-up sync (xfmail feature)
+    let parents_header = headers
+        .get("parents")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let client_parents: Vec<String> = if parents_header.is_empty() {
+        Vec::new()
+    } else {
+        // Parse structured headers format: "v1", "v2", "v3"
+        parents_header
+            .split(',')
+            .map(|s| s.trim().trim_matches('"').to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
 
     // Get heartbeat interval from header
     let heartbeat = headers
@@ -63,8 +178,36 @@ pub async fn braid_subscribe(
         .map(|v| v.to_string());
 
     debug!(
-        "[BraidSubscribe] heartbeat={}s, since_version={:?}",
-        heartbeat, since_version
+        "[BraidSubscribe] heartbeat={}s, since_version={:?}, parents={:?}",
+        heartbeat, since_version, client_parents
+    );
+
+    // Get current room state and load initial messages
+    let (current_version, initial_messages) = if let Some(room_lock) = state.store.get_room(&room_id).await.ok().flatten() {
+        let room_data = room_lock.read().await;
+        let frontier = room_data.crdt.get_frontier();
+        let version = frontier
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "0@server".to_string());
+        
+        // Get messages - use catch-up sync if parents provided
+        let messages = if client_parents.is_empty() {
+            // No parents = get recent messages
+            state.store.get_messages(&room_id, since_version.as_deref()).await.unwrap_or_default()
+        } else {
+            // Catch-up sync: get messages since parents
+            state.store.get_messages_since_parents(&room_id, &client_parents, 100).await.unwrap_or_default()
+        };
+        
+        (version, messages)
+    } else {
+        ("0@server".to_string(), Vec::new())
+    };
+
+    info!(
+        "[BRAID-STREAM] Established for room {} with {} initial messages",
+        room_id, initial_messages.len()
     );
 
     // Get the broadcast channel for this room
@@ -73,36 +216,10 @@ pub async fn braid_subscribe(
 
     // Create the Braid subscription stream
     let stream = async_stream::stream! {
-        // Get current room state
-        let current_version = if let Some(room_lock) = state.store.get_room(&room_id).await.ok().flatten() {
-            let room_data = room_lock.read().await;
-            room_data.crdt.get_frontier()
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "0@server".to_string())
-        } else {
-            "0@server".to_string()
-        };
-
-        // Send Braid protocol headers (using braid-http format)
-        yield Ok::<_, Infallible>(format!("{}: \"{}\"\r\n", headers::VERSION.as_str(), current_version));
-        yield Ok::<_, Infallible>(format!("{}: {}s\r\n\r\n", headers::HEARTBEATS.as_str(), heartbeat));
-
-        // If client provided a version, send missed updates
-        if let Some(ref since) = since_version {
-            // Parse comma-separated versions
-            let known_versions: HashMap<String, bool> = since
-                .split(',')
-                .map(|v| (v.trim().to_string(), true))
-                .collect();
-            
-            if let Ok(updates) = state.store.generate_sync_braid(&room_id, &known_versions).await {
-                for update in updates {
-                    let json = serde_json::to_string(&update).unwrap_or_default();
-                    yield Ok::<_, Infallible>(format!("{}: \"{}\"\r\n", headers::VERSION.as_str(), update.version));
-                    yield Ok::<_, Infallible>(format!("data: {}\r\n\r\n", json));
-                }
-            }
+        // Send initial messages using multipart format
+        for msg in initial_messages {
+            let crdt_version = msg.version.clone();
+            yield Ok::<_, Infallible>(format_braid_update(&msg, Some(&crdt_version)));
         }
 
         // Stream updates with Braid protocol
@@ -112,41 +229,56 @@ pub async fn braid_subscribe(
             tokio::select! {
                 // Wait for room updates
                 Ok(update) = rx.recv() => {
-                    let event_type = match update.update_type {
-                        UpdateType::Message => "message",
-                        UpdateType::Presence => "presence",
-                        UpdateType::Typing => "typing",
-                        UpdateType::RoomUpdate => "room",
-                        UpdateType::Sync => "sync",
-                    };
-
-                    let data = serde_json::to_string(&update.data).unwrap_or_default();
-                    
-                    // Braid protocol format
-                    if let Some(version) = &update.crdt_version {
-                        yield Ok::<_, Infallible>(format!("{}: \"{}\"\r\n", headers::VERSION.as_str(), version));
+                    match update.update_type {
+                        UpdateType::Message => {
+                            // Parse the message from update data
+                            if let Ok(msg) = serde_json::from_value::<Message>(update.data.clone()) {
+                                yield Ok::<_, Infallible>(format_braid_update(&msg, update.crdt_version.as_deref()));
+                            }
+                        }
+                        _ => {
+                            // For non-message updates, use simple format
+                            let data = serde_json::to_string(&update.data).unwrap_or_default();
+                            let event_type = match update.update_type {
+                                UpdateType::Presence => "presence",
+                                UpdateType::Typing => "typing",
+                                UpdateType::RoomUpdate => "room",
+                                UpdateType::Sync => "sync",
+                                _ => "unknown",
+                            };
+                            
+                            let mut output = String::new();
+                            if let Some(version) = &update.crdt_version {
+                                output.push_str(&format!("Version: \"{}\"\r\n", version));
+                            }
+                            output.push_str(&format!("type: {}\r\n", event_type));
+                            output.push_str(&format!("Content-Length: {}\r\n", data.len()));
+                            output.push_str("\r\n");
+                            output.push_str(&data);
+                            output.push_str("\r\n\r\n");
+                            yield Ok::<_, Infallible>(Bytes::from(output));
+                        }
                     }
-                    yield Ok::<_, Infallible>(format!("type: {}\r\n", event_type));
-                    yield Ok::<_, Infallible>(format!("data: {}\r\n\r\n", data));
                 }
                 
-                // Send heartbeat (Braid protocol keepalive)
+                // Send heartbeat (blank line = Braid keepalive)
                 _ = heartbeat_interval.tick() => {
-                    yield Ok::<_, Infallible>("\r\n".to_string());  // Blank line = heartbeat in Braid
+                    yield Ok::<_, Infallible>(Bytes::from("\r\n".to_string()));
                 }
             }
         }
     };
 
-    // Build Braid protocol response
-    let response = axum::response::Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "text/plain") // Braid uses text/plain, not event-stream
-        .header("cache-control", "no-cache")
-        .header("connection", "keep-alive")
-        // Braid protocol headers (using braid-http constants)
+    // Build HTTP 209 response with Braid headers (xfmail-style)
+    let response = Response::builder()
+        .status(StatusCode::from_u16(209).unwrap()) // HTTP 209 Subscription
+        .header(header::CONTENT_TYPE, "application/json")
         .header(headers::SUBSCRIBE.as_str(), "true")
+        .header("Merge-Type", "diamond")
+        .header("Cache-Control", "no-cache")
+        .header("Connection", "keep-alive")
         .header(headers::HEARTBEATS.as_str(), format!("{}s", heartbeat))
+        .header(headers::VERSION.as_str(), format!("\"{}\"", current_version))
         .body(Body::from_stream(stream))
         .map_err(|e| {
             error!("[BraidSubscribe] Failed to build response: {}", e);

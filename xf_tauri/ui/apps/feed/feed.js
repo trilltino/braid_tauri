@@ -19,24 +19,52 @@ export function initFeed() {
     const rightSubscribeBtn = document.getElementById('right-subscribe-btn');
     
     const handleSubscribe = async () => {
+        // Prompt for optional authentication cookie
+        const cookie = prompt(
+            'Enter your Braid authentication cookie (optional):\n\n' +
+            'This allows you to post messages with your identity.\n' +
+            'Leave blank to browse anonymously.',
+            ''
+        );
+
+        // If user cancelled the prompt, abort
+        if (cookie === null) {
+            return;
+        }
+
         const btn = subscribeBtn || rightSubscribeBtn;
         if (btn) {
             btn.disabled = true;
             btn.textContent = 'Subscribing...';
+            // Optimistically hide the section if it's the right one, to remove the "grey box"
+            if (btn === rightSubscribeBtn) {
+                btn.style.opacity = '0.5';
+            }
         }
         
         try {
+            // Set authentication if cookie provided
+            if (cookie && cookie.trim()) {
+                await invoke('set_mail_auth', { cookie: cookie.trim() });
+            }
+
             await invoke('subscribe_braid_mail');
             isSubscribed = true;
-            showToast('Subscribed to Braid Mail!', 'success');
+            showToast('Subscribed! Fetching messages...', 'success');
+
+            // Force UI update immediately
             showFeedUI();
-            loadMailFeed();
+
+            // Add a small delay to allow backend to switch contexts if needed, then load
+            setTimeout(loadMailFeed, 500);
+
         } catch (err) {
             console.error('Subscribe failed:', err);
             showToast('Subscribe failed: ' + err, 'error');
             if (btn) {
                 btn.disabled = false;
-                btn.textContent = 'Subscribe';
+                btn.textContent = 'Subscribe to https://mail.braid.org/';
+                btn.style.opacity = '1';
             }
         }
     };
@@ -124,11 +152,13 @@ function showFeedUI() {
     const feedContent = document.getElementById('mail-feed-content');
     const rightSubscribeSection = document.getElementById('mail-right-subscribe-section');
     const rightSelectSection = document.getElementById('mail-right-select-msg-section');
+    const mailSidebar = document.getElementById('mail-sidebar');
 
     if (subscribePrompt) subscribePrompt.style.display = 'none';
     if (feedContent) feedContent.style.display = 'block';
     if (rightSubscribeSection) rightSubscribeSection.style.display = 'none';
     if (rightSelectSection) rightSelectSection.style.display = 'block';
+    if (mailSidebar) mailSidebar.style.display = 'flex';
 }
 
 export async function loadMailFeed() {
@@ -138,38 +168,108 @@ export async function loadMailFeed() {
     }
 
     console.log("Fetching Mail Feed...");
+    localStorage.removeItem('braid_feed_cache'); // FORCE CLEAR CACHE
     const feedContent = document.getElementById('mail-feed-content');
     if (feedContent) {
         feedContent.innerHTML = '<div class="loading-state">Refreshing feed...</div>';
     }
 
     try {
-        const [localPosts, networkPosts] = await Promise.all([
-            invoke('get_mail_feed').catch(e => { console.error("Local feed error:", e); return []; }),
-            invoke('get_mail_feed_braid').catch(e => { console.warn("Network feed error:", e); return []; })
-        ]);
+
+        // We only need one fetch now as both commands route to the local hydrated server
+        const posts = await invoke('get_mail_feed').catch(e => { console.error("Feed error:", e); return []; });
+
+        if (posts.length === 0 && isSubscribed) {
+            // If empty but subscribed, it might be syncing. Retry aggressively.
+            if (!window.feedRetryCount) window.feedRetryCount = 0;
+
+            if (window.feedRetryCount < 5) {
+                window.feedRetryCount++;
+                const delay = window.feedRetryCount * 500; // 500ms, 1000ms, 1500ms...
+                console.log(`Feed empty, retrying in ${delay}ms (Attempt ${window.feedRetryCount}/5)`);
+
+                if (feedContent) {
+                    feedContent.innerHTML = `<div class="loading-state">Syncing messages... (${window.feedRetryCount}/5)</div>`;
+                }
+
+                setTimeout(loadMailFeed, delay);
+                return; // Stop processing this empty attempt
+            }
+        }
+        // Reset retry count on success or give up
+        window.feedRetryCount = 0;
 
         const postMap = new Map();
-        localPosts.forEach(p => {
-            const url = p.url || `local-${p.timestamp}`;
-            postMap.set(url, { ...p, url, is_network: false });
-        });
 
-        networkPosts.forEach(p => {
-            const url = p.id || p.link || p.url;
-            if (!url) return;
-            postMap.set(url, { ...p, url, is_network: true });
+        // 1. Load from Cache first
+        const cached = localStorage.getItem('braid_feed_cache');
+        if (cached) {
+            try {
+                const cachedPosts = JSON.parse(cached);
+                cachedPosts.forEach(p => postMap.set(p.url, p));
+            } catch (e) { console.error("Cache parse error", e); }
+        }
+
+        // 2. Merge fresh posts
+        posts.forEach(p => {
+            if (!p) return;
+            // Handle different API formats (Braid Mail vs Generic Feed)
+            const id = p.id || p.link || p.url;
+            if (!id) return;
+
+            const normalized = {
+                ...p,  // Spread first so our normalized values override
+                url: id,
+                is_network: true,
+                subject: p.subject || p.title || '(No Subject)',
+                from: p.from || p.author || p.sender || 'Anonymous',
+                date: p.date || p.published || p.created_at || new Date().toISOString(),
+                body: p.body || p.content || p.summary || ''
+            };
+
+            // Fix: Ensure 'from' is a string
+            // Per braidmail spec: from/to are ALWAYS arrays, defaults are ['anonymous'] and ['public']
+            if (Array.isArray(normalized.from)) {
+                normalized.from = normalized.from.length > 0 && normalized.from[0] !== 'anonymous'
+                    ? normalized.from[0]
+                    : 'Anonymous';
+            } else if (typeof normalized.from === 'object' && normalized.from !== null) {
+                normalized.from = normalized.from.name || 'Anonymous';
+            } else if (!normalized.from || normalized.from === 'anonymous') {
+                normalized.from = 'Anonymous';
+            }
+
+            // Similarly normalize 'to' field
+            if (Array.isArray(normalized.to)) {
+                normalized.to = normalized.to.length > 0 && normalized.to[0] !== 'public'
+                    ? normalized.to.join(', ')
+                    : 'Public';
+            }
+
+            postMap.set(id, normalized);
         });
 
         let allPosts = Array.from(postMap.values());
-        allPosts.sort((a, b) => (b.date || 0) - (a.date || 0));
 
-        if (!allPosts.some(p => p.date)) allPosts.reverse();
+        // Filter out "junk" posts?
+        // UPDATE: User wants to see ALL posts found in the index, even if hydration failed.
+        // So we relax this filter to show everything that has a valid URL/ID.
+        allPosts = allPosts.filter(p => !!p.url);
+
+        allPosts.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+        // Save to cache
+        localStorage.setItem('braid_feed_cache', JSON.stringify(allPosts.slice(0, 5000))); // Cache top 5000
 
         renderMailFeed(allPosts);
     } catch (e) {
         console.error("Failed to load mail feed:", e);
-        if (feedContent) {
+        // Try to load from cache if fetch fails
+        const cached = localStorage.getItem('braid_feed_cache');
+        if (cached) {
+            renderMailFeed(JSON.parse(cached));
+            showToast("Loaded from cache (Offline)", "info");
+        } else if (feedContent) {
             feedContent.innerHTML = `<div class="error-state">Failed to load feed: ${e}</div>`;
         }
     }
@@ -189,21 +289,19 @@ function renderMailFeed(posts) {
     posts.forEach((post, index) => {
         const item = document.createElement('div');
         item.className = 'feed-card mail-item';
-        const from = Array.isArray(post.from) ? post.from[0] : (post.from || 'Unknown');
-        const subject = post.subject || '(No Subject)';
-        const date = post.date ? new Date(post.date).toLocaleDateString() : '';
-        const origin = post.url && post.url.includes('braid.org') ? 'Braid Network' : 'Local Node';
+
+        // Double-check defaults during render
+        // Use shared safe extraction
+        const from = getSafeFrom(post);
+
+        const subject = post.subject || (post.url ? `Post ${post.url.split('/').pop()}` : '(No Subject)');
 
         item.innerHTML = `
-            <div class="feed-card-header">
-                <div class="feed-origin">${origin}</div>
-                <span class="mail-date">${date}</span>
-            </div>
             <div class="feed-card-title">${subject}</div>
             <div class="feed-card-footer">
                 <div class="feed-author">
                     <div class="profile-icon">
-                        <img src="https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(from)}">
+                        <img src="/img/toom-headup.jpg" alt="${from}">
                     </div>
                     <span>${from}</span>
                 </div>
@@ -214,6 +312,14 @@ function renderMailFeed(posts) {
     });
 
     if (posts.length > 0) selectMailItem(0, feedContent.querySelector('.mail-item'));
+}
+
+// Helper for robust sender extraction
+function getSafeFrom(post) {
+    let from = post.from || 'Anonymous';
+    if (Array.isArray(from)) from = from.length > 0 ? from[0] : 'Anonymous';
+    if (typeof from === 'object' && from !== null) from = from.name || 'Anonymous';
+    return from;
 }
 
 export function selectMailItem(index, itemElement) {
@@ -228,18 +334,21 @@ export function selectMailItem(index, itemElement) {
     const contentDisplay = document.getElementById('mail-content-display');
     contentDisplay.style.display = 'flex';
 
-    const from = Array.isArray(post.from) ? post.from[0] : (post.from || 'Unknown');
+    // Use safe extraction
+    const from = getSafeFrom(post);
+
     document.getElementById('detail-subject').textContent = post.subject || '(No Subject)';
     document.getElementById('detail-sender').textContent = from;
     document.getElementById('detail-date').textContent = post.date ? new Date(post.date).toLocaleString() : 'Unknown Date';
 
     const bodyEl = document.getElementById('detail-body');
     const body = post.body || '';
+    // Simple improved display for mixed content
     bodyEl.innerHTML = body.trim().startsWith('<') ? body : body.replace(/\n/g, '<br>');
 
     const avatarEl = document.getElementById('detail-avatar');
     if (avatarEl) {
-        avatarEl.innerHTML = `<img src="https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(from)}" alt="${from}">`;
+        avatarEl.innerHTML = `<img src="/img/toom-headup.jpg" alt="${from}">`;
     }
 }
 
@@ -260,7 +369,12 @@ export async function sendBraidMail() {
     sendBtn.textContent = "Sending...";
 
     try {
-        await invoke('send_mail', { subject, body });
+        await invoke('send_mail', {
+            subject,
+            body,
+            from: window.currentUser?.email || 'anonymous',
+            to: ['public']
+        });
         showToast("Message sent successfully!", "success");
         subjectEl.value = '';
         bodyEl.value = '';

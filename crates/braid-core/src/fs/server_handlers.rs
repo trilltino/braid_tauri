@@ -64,11 +64,11 @@ pub async fn handle_get_file(
                         // Initialize merge state if not exists
                         let peer_id = crate::fs::PEER_ID.read().await.clone();
                         let mut merges = state.active_merges.write().await;
-                        let merge = merges.entry(path.clone()).or_insert_with(|| {
+                        let _merge = merges.entry(path.clone()).or_insert_with(|| {
                             let mut m = state
                                 .merge_registry
-                                .create("diamond", &peer_id)
-                                .expect("Failed to create diamond merge");
+                                .create("simpleton", &peer_id)
+                                .expect("Failed to create simpleton merge");
                             m.initialize(&body);
                             m
                         });

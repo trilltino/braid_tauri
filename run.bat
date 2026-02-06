@@ -71,6 +71,10 @@ goto menu
 echo [INFO] Relaunching Tauri UI...
 taskkill /F /IM "xf_tauri.exe" /T 2>nul
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :1420 ^| findstr LISTENING') do taskkill /F /PID %%a 2>nul
+echo [BUILD] Rebuilding Tauri (ensuring latest code)...
+cd /d "%~dp0xf_tauri"
+cargo build --no-default-features
+cd /d "%~dp0"
 call :launch_tauri
 timeout /t 2 >nul
 goto menu

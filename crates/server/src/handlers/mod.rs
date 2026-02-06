@@ -1,7 +1,6 @@
 //! Handlers for server
 //!
 //! All handlers use pure Braid protocol (braid-core + braid-http).
-//! NO SSE - everything is Braid-native.
 
 pub mod auth;
 pub mod braid_subscribe;
@@ -14,12 +13,12 @@ pub mod typing;
 pub use crate::config::AppState;
 
 // Auth handlers
-pub use auth::{list_users, login, logout, me, signup};
+pub use auth::{list_users, login, logout, me, signup, update_profile};
 
 // Chat handlers using pure Braid protocol
 pub use chat::{
     clear_drafts, get_blob, get_chat_room, get_drafts, get_room_status, put_message, save_draft,
-    upload_blob,
+    upload_blob, list_rooms,
 };
 
 // Braid-native subscription (NOT SSE)

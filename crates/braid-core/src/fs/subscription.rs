@@ -10,19 +10,26 @@ pub async fn spawn_subscription(
     subscriptions: &mut HashMap<String, tokio::task::JoinHandle<()>>,
     state: DaemonState,
 ) {
+    tracing::info!("[DEBUG] spawn_subscription called for {}", url);
+    
     if subscriptions.contains_key(&url) {
+        tracing::info!("[DEBUG] Subscription for {} already exists, skipping", url);
         return;
     }
 
-    if !state
+    let sync_enabled = state
         .config
         .read()
         .await
         .sync
         .get(&url)
         .cloned()
-        .unwrap_or(false)
-    {
+        .unwrap_or(false);
+    
+    tracing::info!("[DEBUG] Sync enabled for {}: {}", url, sync_enabled);
+    
+    if !sync_enabled {
+        tracing::warn!("[DEBUG] Sync not enabled for {}, skipping subscription", url);
         return;
     }
 
@@ -33,19 +40,28 @@ pub async fn spawn_subscription(
             match subscribe_loop(url_capture.clone(), state_capture.clone()).await {
                 Ok(_) => {
                     tracing::info!(
-                        "Subscription for {} ended normally (disconnect). Retrying in 5s...",
+                        "Subscription for {} ended normally. Reconnecting in 1s...",
                         url_capture
                     );
                 }
                 Err(e) => {
-                    tracing::error!(
-                        "Subscription error for {}: {}. Retrying in 5s...",
-                        url_capture,
-                        e
-                    );
+                    // Stream errors are usually just idle timeouts - not real errors
+                    let error_str = format!("{}", e);
+                    if error_str.contains("decode") || error_str.contains("timeout") || error_str.contains("closed") {
+                        tracing::info!(
+                            "Subscription for {} idle timeout (normal). Reconnecting in 1s...",
+                            url_capture
+                        );
+                    } else {
+                        tracing::error!(
+                            "Subscription error for {}: {}. Reconnecting in 1s...",
+                            url_capture,
+                            e
+                        );
+                    }
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     });
 
@@ -53,17 +69,137 @@ pub async fn spawn_subscription(
 }
 
 pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
-    tracing::info!("Subscribing to {}", url);
+    tracing::info!("[DEBUG] === subscribe_loop START for {}", url);
 
-    let mut req = BraidRequest::new()
+    // First, fetch the current content via regular GET to ensure we have data
+    // This handles servers that return HTTP 200 instead of HTTP 209 subscription stream
+    tracing::info!("[DEBUG] Building fetch request for {}", url);
+    
+    let fetch_req = {
+        let mut req = BraidRequest::new()
+            .with_header("Accept", "text/plain");
+        
+        // Add Authentication Headers
+        if let Ok(u) = url::Url::parse(&url) {
+            if let Some(domain) = u.domain() {
+                let cfg = state.config.read().await;
+                tracing::info!("[DEBUG] Config read, cookies: {:?}", cfg.cookies.keys().collect::<Vec<_>>());
+                if let Some(token) = cfg.cookies.get(domain) {
+                    tracing::info!("[DEBUG] Found cookie for domain {}", domain);
+                    req = req.with_header("Authorization", format!("Bearer {}", token));
+                    let cookie_str = if token.contains('=') {
+                        token.clone()
+                    } else if domain.contains("braid.org") {
+                        format!("client={}", token)
+                    } else {
+                        format!("token={}", token)
+                    };
+                    req = req.with_header("Cookie", cookie_str);
+                } else {
+                    tracing::warn!("[DEBUG] No cookie found for domain {}", domain);
+                }
+            }
+        }
+        tracing::info!("[DEBUG] Fetch request built with headers: {:?}", req.extra_headers);
+        req
+    };
+    
+    // Try to fetch initial content first
+    tracing::info!("[DEBUG] Calling state.client.fetch for {}", url);
+    match state.client.fetch(&url, fetch_req).await {
+        Ok(response) => {
+            tracing::info!("[DEBUG] Fetch returned status {} with {} bytes for {}", 
+                response.status, response.body.len(), url);
+            
+            if (200..300).contains(&response.status) && !response.body.is_empty() {
+                let body = String::from_utf8_lossy(&response.body);
+                tracing::info!("[DEBUG] Response body preview (first 200 chars): {}", 
+                    body.chars().take(200).collect::<String>());
+                
+                // Process and write the content
+                let final_content = if body.trim().starts_with("<!DOCTYPE")
+                    || body.trim().starts_with("<html")
+                {
+                    tracing::info!("[DEBUG] Detected HTML, extracting markdown");
+                    mapping::extract_markdown(&body)
+                } else {
+                    tracing::info!("[DEBUG] Using body as-is (plain text)");
+                    body.to_string()
+                };
+                
+                tracing::info!("[DEBUG] Mapping URL to path for {}", url);
+                match mapping::url_to_path(&url) {
+                    Ok(path) => {
+                        // Skip if local server is managing this URL
+                        {
+                            let managed = state.local_server_managed.read().await;
+                            if managed.contains(&url) {
+                                tracing::info!("[BraidFS-Sub] Skipping write for {} - managed by local server", url);
+                                return Ok(());
+                            }
+                        }
+                        
+                        // ALWAYS write server content to file - server is source of truth
+                        // Cache check removed: it was preventing braid.org updates from syncing to IDE
+                        // when subscription reconnected after timeout
+                        
+                        tracing::info!("[DEBUG] Path resolved to: {:?}", path);
+                        state.pending.add(path.clone());
+                        
+                        if let Some(parent) = path.parent() {
+                            tracing::info!("[DEBUG] Ensuring parent directory: {:?}", parent);
+                            ensure_dir_path(parent).await;
+                        }
+                        
+                        let tmp_path = path.with_extension("tmp");
+                        tracing::info!("[DEBUG] Writing to tmp file: {:?}", tmp_path);
+                        
+                        match tokio::fs::write(&tmp_path, &final_content).await {
+                            Ok(_) => {
+                                tracing::info!("[DEBUG] Tmp file written, renaming to {:?}", path);
+                                match tokio::fs::rename(&tmp_path, &path).await {
+                                    Ok(_) => {
+                                        tracing::info!("[BraidFS-Sub] Wrote initial content for {} ({} bytes)", 
+                                            url, final_content.len());
+                                        
+                                        // Update content cache
+                                        let mut cache = state.content_cache.write().await;
+                                        cache.insert(url.clone(), final_content);
+                                        tracing::info!("[DEBUG] Content cache updated");
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("[DEBUG] Failed to rename tmp file: {}", e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!("[DEBUG] Failed to write tmp file: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("[DEBUG] Failed to map URL to path: {:?}", e);
+                    }
+                }
+            } else {
+                tracing::warn!("[DEBUG] Fetch returned empty body or non-2xx status");
+            }
+        }
+        Err(e) => {
+            tracing::error!("[DEBUG] Fetch failed with error: {}", e);
+        }
+    }
+
+    // Now subscribe for real-time updates
+    let mut sub_req = BraidRequest::new()
         .subscribe()
         .with_header("Accept", "text/plain")
         .with_header("Heartbeats", "30s");
 
     // For braid.org wiki pages, request the simpleton merge type
-    // This matches the behavior of braid-text sites
+    // (the server will send the content as plain text with simpleton CRDT)
     if url.contains("braid.org") {
-        req = req.with_merge_type("simpleton");
+        sub_req = sub_req.with_merge_type("simpleton");
     }
 
     // Add Authentication Headers
@@ -71,31 +207,26 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
         if let Some(domain) = u.domain() {
             let cfg = state.config.read().await;
             if let Some(token) = cfg.cookies.get(domain) {
-                req = req.with_header("Authorization", format!("Bearer {}", token));
+                sub_req = sub_req.with_header("Authorization", format!("Bearer {}", token));
                 let cookie_str = if token.contains('=') {
                     token.clone()
+                } else if domain.contains("braid.org") {
+                    format!("client={}", token)
                 } else {
                     format!("token={}", token)
                 };
-                req = req.with_header("Cookie", cookie_str);
+                sub_req = sub_req.with_header("Cookie", cookie_str);
             }
         }
     }
 
-    let mut sub = state.client.subscribe(&url, req).await?;
+    let mut sub = state.client.subscribe(&url, sub_req).await?;
     let mut is_first = true;
+    
+    tracing::info!("[BraidFS-Sub] Subscription stream started for {}", url);
 
     while let Some(update) = sub.next().await {
         let update = update?;
-
-        // Handle 309 Reborn during subscription
-        if update.status == 309 {
-            tracing::warn!(
-                "[BraidFS] Reborn (309) detected during subscription for {}. History reset.",
-                url
-            );
-            is_first = true;
-        }
 
         // Filter echoes (ignore updates from ourselves)
         if let Some(v) = update.primary_version() {
@@ -113,6 +244,19 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
         is_first = false;
 
         tracing::debug!("Received update from {}: {:?}", url, update.version);
+
+        // Check if we already have this version (skip write but keep listening)
+        {
+            let store = state.version_store.read().await;
+            if let Some(file_version) = store.file_versions.get(&url) {
+                let fetched_version: Vec<String> = update.version.iter().map(|v| v.to_string()).collect();
+                if file_version.current_version == fetched_version {
+                    tracing::info!("[BraidFS-Sub] Version {} already current for {}, continuing to listen", 
+                        fetched_version.join(","), url);
+                    continue;  // Keep subscription alive, don't return!
+                }
+            }
+        }
 
         // Update version store
         {
@@ -138,7 +282,7 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
                         let mut merges = state.active_merges.write().await;
                         let peer_id = PEER_ID.read().await.clone();
                         let requested_merge_type =
-                            update.merge_type.as_deref().unwrap_or("diamond");
+                            update.merge_type.as_deref().unwrap_or("simpleton");
                         let merge = merges.entry(url.clone()).or_insert_with(|| {
                             tracing::info!(
                                 "[BraidFS] Creating merge state for {} with type: {}",
@@ -148,7 +292,7 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
                             let mut m = state
                                 .merge_registry
                                 .create(requested_merge_type, &peer_id)
-                                .or_else(|| state.merge_registry.create("diamond", &peer_id))
+                                .or_else(|| state.merge_registry.create("simpleton", &peer_id))
                                 .expect("Failed to create merge type");
                             m.initialize(body);
                             m
@@ -173,12 +317,25 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
                         raw_content
                     };
 
+                    // Skip if local server is managing this URL
+                    {
+                        let managed = state.local_server_managed.read().await;
+                        if managed.contains(&url) {
+                            tracing::info!("[BraidFS-Sub] Skipping snapshot write for {} - managed by local server", url);
+                            return Ok(());
+                        }
+                    }
+                    
+                    // NOTE: We ALWAYS write server updates to file, even if content matches cache.
+                    // The server is the source of truth for LWW. This ensures IDE refreshes.
+                    // Cache check removed - was preventing braid.org updates from showing in IDE.
+                    
                     // Update Content Cache
                     {
                         let mut cache = state.content_cache.write().await;
                         cache.insert(url.clone(), final_content.clone());
                     }
-
+                    
                     if let Ok(path) = mapping::url_to_path(&url) {
                         // Add to pending BEFORE writing to avoid echo loop
                         state.pending.add(path.clone());
@@ -228,7 +385,7 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
         let final_content = {
             let mut merges = state.active_merges.write().await;
             let peer_id = PEER_ID.read().await.clone();
-            let requested_merge_type = update.merge_type.as_deref().unwrap_or("diamond");
+            let requested_merge_type = update.merge_type.as_deref().unwrap_or("simpleton");
             let merge = merges.entry(url.clone()).or_insert_with(|| {
                 tracing::info!(
                     "[BraidFS] Creating merge state for {} with type: {}",
@@ -238,7 +395,7 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
                 let mut m = state
                     .merge_registry
                     .create(requested_merge_type, &peer_id)
-                    .or_else(|| state.merge_registry.create("diamond", &peer_id))
+                    .or_else(|| state.merge_registry.create("simpleton", &peer_id))
                     .expect("Failed to create merge type");
                 m.initialize(&content);
                 m
@@ -298,6 +455,18 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
 async fn ensure_dir_path(path: &std::path::Path) {
     let mut current = std::path::PathBuf::new();
     for component in path.components() {
+        use std::path::Component;
+        
+        // Skip Prefix (e.g., "C:") and RootDir ("\") on Windows
+        // These cannot and should not be created as directories
+        match component {
+            Component::Prefix(_) | Component::RootDir => {
+                current.push(component);
+                continue;
+            }
+            _ => {}
+        }
+        
         current.push(component);
         if current.exists() {
             if current.is_file() {

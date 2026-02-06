@@ -68,8 +68,12 @@ impl FriendManager {
 
     /// Get database connection
     async fn get_pool(&self) -> Result<sqlx::SqlitePool> {
-        let db_url = format!("sqlite:{}", self.db_path.display());
-        Ok(SqlitePoolOptions::new().connect(&db_url).await?)
+        use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+        use std::str::FromStr;
+        
+        let options = SqliteConnectOptions::from_str(&format!("sqlite:{}", self.db_path.display()))?
+            .create_if_missing(true);
+        Ok(SqlitePoolOptions::new().connect_with(options).await?)
     }
 
     /// Initialize database tables

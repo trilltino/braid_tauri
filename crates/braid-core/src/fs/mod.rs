@@ -23,6 +23,7 @@ pub mod blob_handlers;
 pub mod config;
 pub mod debouncer;
 pub mod diff;
+pub mod local_server;
 pub mod mapping;
 #[cfg(feature = "nfs")]
 pub mod mount;
@@ -156,13 +157,11 @@ pub async fn run_daemon(port: u16) -> Result<()> {
     merge_registry.register("antimatter", |id| {
         Box::new(crate::core::merge::AntimatterMergeType::new_native(id))
     });
-    merge_registry.register("diamond", |id| {
-        Box::new(crate::core::merge::DiamondMergeType::new(id))
-    });
-    merge_registry.register("dt", |id| {
-        Box::new(crate::core::merge::DiamondMergeType::new(id))
-    });
+    // Simpleton (braid-text) is the primary merge type for text documents
     merge_registry.register("simpleton", |id| {
+        Box::new(crate::core::merge::simpleton::SimpletonMergeType::new(id))
+    });
+    merge_registry.register("braid-text", |id| {
         Box::new(crate::core::merge::simpleton::SimpletonMergeType::new(id))
     });
     let merge_registry = Arc::new(merge_registry);
@@ -304,6 +303,7 @@ pub async fn run_daemon(port: u16) -> Result<()> {
         inode_db,
         tx_cmd: tx_cmd.clone(),
         debouncer: Arc::new(debouncer::DebouncedSyncManager::new_placeholder()), // Placeholder to fix circularity
+        local_server_managed: Arc::new(RwLock::new(std::collections::HashSet::new())),
     };
 
     // Initialize the real debouncer with the state
@@ -323,7 +323,7 @@ pub async fn run_daemon(port: u16) -> Result<()> {
     // ---------------------------------------------------------
     // Interactive Console (for Token/Cookie Entry)
     // ---------------------------------------------------------
-    let tx_console = state.tx_cmd.clone();
+    let state_console = state.clone();
     tokio::spawn(async move {
         use tokio::io::{self, AsyncBufReadExt, BufReader};
         let mut reader = BufReader::new(io::stdin()).lines();
@@ -342,13 +342,22 @@ pub async fn run_daemon(port: u16) -> Result<()> {
                 "token" | "cookie" if parts.len() >= 3 => {
                     let domain = parts[1].to_string();
                     let value = parts[2].to_string();
-                    let _ = tx_console.send(Command::SetCookie { domain, value }).await;
+                    let _ = state_console.tx_cmd.send(Command::SetCookie { domain, value }).await;
                     println!("[BraidFS] Cookie updated for {}", parts[1]);
                 }
                 "sync" if parts.len() >= 2 => {
-                    let url = parts[1].to_string();
-                    let _ = tx_console.send(Command::Sync { url }).await;
-                    println!("[BraidFS] Sync triggered for {}", parts[1]);
+                    let url_str = parts[1].to_string();
+                    if let Ok(u) = url::Url::parse(&url_str) {
+                         if let Some(domain) = u.domain() {
+                             let cfg = state_console.config.read().await;
+                             if !cfg.cookies.contains_key(domain) && domain.contains("braid.org") {
+                                 println!("[BraidFS] ⚠️ Missing cookie for {}. Write access will fail.", domain);
+                                 println!("[BraidFS] Please set it first: token {} client=<your-cookie>", domain);
+                             }
+                         }
+                    }
+                    let _ = state_console.tx_cmd.send(Command::Sync { url: url_str.clone() }).await;
+                    println!("[BraidFS] Sync triggered for {}", url_str);
                 }
                 "help" => {
                     println!("Commands: token <domain> <value>, sync <url>");
@@ -367,16 +376,29 @@ pub async fn run_daemon(port: u16) -> Result<()> {
 
     let mut subscriptions: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
 
-    /* Initial subscriptions - Disabled for On-Demand Architecture
+    // Start subscriptions for all enabled sync URLs
     {
         let cfg = state.config.read().await;
         for (url, enabled) in &cfg.sync {
             if *enabled {
+                tracing::info!("[BraidFS] Starting subscription for {}", url);
                 spawn_subscription(url.clone(), &mut subscriptions, state.clone()).await;
             }
         }
     }
-    */
+
+    // Start local HTTP 209 server for IDE subscriptions
+    // Note: Polling only happens when there are active subscribers
+    {
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            let server = local_server::LocalBraidServer::new(state_clone, 5);
+            if let Err(e) = server.start(45679).await {
+                tracing::error!("[BraidFS] Local server error: {}", e);
+            }
+        });
+        tracing::info!("[BraidFS] HTTP 209 server on port 45679 (active when IDE connected)");
+    }
 
     #[cfg(feature = "nfs")]
     let mut active_mount_point: Option<String> = None;
@@ -404,13 +426,15 @@ pub async fn run_daemon(port: u16) -> Result<()> {
             Ok(cmd) = rx_cmd.recv() => {
                 match cmd {
                     Command::Sync { url } => {
-                        tracing::info!("Enable Sync: {}", url);
+                        tracing::info!("[DEBUG] === Command::Sync received for {}", url);
                         {
                             let mut cfg = state.config.write().await;
                             cfg.sync.insert(url.clone(), true);
                             let _ = cfg.save().await;
                         }
+                        tracing::info!("[DEBUG] About to call spawn_subscription for {}", url);
                         spawn_subscription(url.clone(), &mut subscriptions, state.clone()).await;
+                        tracing::info!("[DEBUG] spawn_subscription completed for {}", url);
 
                         if binary_sync::should_use_binary_sync(&url) {
                             let bsm = state.binary_sync.clone();

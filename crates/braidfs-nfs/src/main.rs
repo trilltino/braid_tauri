@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 #[derive(Parser)]
 struct Cli {
@@ -89,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
         inode_db,
         tx_cmd,
         debouncer,
+        local_server_managed: Arc::new(RwLock::new(std::collections::HashSet::new())),
     };
 
     // 4. Start NFS Server

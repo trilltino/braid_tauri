@@ -207,7 +207,7 @@ export function renderMessage(msg) {
                 } else {
                     return `<a href="http://localhost:3001/blobs/${blob.hash}" 
                                target="_blank" class="file-attachment">
-                                📎 ${blob.filename}
+                                [File] ${blob.filename}
                             </a>`;
                 }
             }).join('') + '</div>';
@@ -215,7 +215,7 @@ export function renderMessage(msg) {
     
     bubble.innerHTML = `
         <div class="message-header">
-            <span class="sender">${isBot ? '🤖 ' : ''}${msg.sender}</span>
+            <span class="sender">${isBot ? '[AI] ' : ''}${msg.sender}</span>
             <span class="time">${timeStr}</span>
         </div>
         <div class="message-content">${contentHtml}</div>
@@ -273,8 +273,8 @@ export async function loadPendingRequests() {
                     <span class="contact-name">${req.from_username}</span>
                 </div>
                 <div class="request-actions">
-                    <button class="icon-btn small accept-req">✅</button>
-                    <button class="icon-btn small reject-req">✕</button>
+                    <button class="text-btn small accept-req">Accept</button>
+                    <button class="text-btn small reject-req">Decline</button>
                 </div>
             `;
             item.querySelector('.accept-req').addEventListener('click', () => respondToRequest(req.id, true));

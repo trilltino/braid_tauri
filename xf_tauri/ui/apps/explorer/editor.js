@@ -1,16 +1,30 @@
 import { showToast, invoke } from '../shared/utils.js';
 
-export function setupQuill(onTextChange) {
-    console.log("Setting up Quill...");
-    const selector = '#quill-editor-container';
+export function setupQuill(onTextChange, selector = '#quill-editor-container') {
+    console.log(`Setting up Quill in ${selector}...`);
     const container = document.querySelector(selector);
     if (!container) {
         console.error("Quill Container NOT FOUND:", selector);
         return null;
     }
 
-    // Clear any existing content
+    // Check if already initialized to prevent duplicates
+    if (window.quillInstances && window.quillInstances[selector]) {
+        console.log(`Quill already initialized for ${selector}, returning instance.`);
+        return window.quillInstances[selector];
+    }
+
+    // Clear any existing content and cleanup previous Quill instances
     container.innerHTML = '';
+
+    // Quill creates a sibling toolbar that isn't removed by clearing innerHTML
+    // We must find and remove it manually (heuristic: previous sibling is ql-toolbar)
+    if (container.previousElementSibling && container.previousElementSibling.classList.contains('ql-toolbar')) {
+        container.previousElementSibling.remove();
+    }
+
+    // Remove Quill styling classes to ensure fresh init
+    container.classList.remove('ql-container', 'ql-snow', 'ql-bubble', 'ql-disabled');
 
     const quill = new Quill(selector, {
         theme: 'snow',
@@ -20,6 +34,11 @@ export function setupQuill(onTextChange) {
             toolbar: [['bold', 'italic'], ['blockquote', 'code-block'], ['link', 'image']]
         }
     });
+
+    if (!window.quillInstances) window.quillInstances = {};
+    window.quillInstances[selector] = quill;
+
+    // Legacy support (points to last initialized, usually AI now)
     window.quill = quill;
 
     // Initially show empty state, hide editor until file is selected
@@ -53,7 +72,15 @@ export function setupQuill(onTextChange) {
 }
 
 export async function handleFileUpload(file) {
-    const quill = window.quill;
+    // Determine active quill based on view or focus
+    // Simple heuristic: If AI view is visible, use AI quill. Else Explorer.
+    let quill = window.quill; // Default
+    if (window.activeChatView === 'ai' && window.quillInstances && window.quillInstances['#ai-quill-container']) {
+        quill = window.quillInstances['#ai-quill-container'];
+    } else if (window.quillInstances && window.quillInstances['#quill-editor-container']) {
+        quill = window.quillInstances['#quill-editor-container'];
+    }
+
     if (!quill) return;
 
     const range = quill.getSelection(true);
@@ -107,16 +134,46 @@ export async function handleFileUpload(file) {
     }
 }
 
-export function setupResizer() {
-    const resizer = document.getElementById('explorer-resizer');
-    const sidebar = document.getElementById('explorer-sidebar');
+export function setupResizer(resizerId, sidebarId, toggleBtnId) {
+    const resizer = document.getElementById(resizerId);
+    const sidebar = document.getElementById(sidebarId);
     if (!resizer || !sidebar) return;
+
     let isResizing = false;
-    resizer.addEventListener('mousedown', () => { isResizing = true; document.body.style.cursor = 'col-resize'; });
+
+    resizer.addEventListener('mousedown', () => {
+        isResizing = true;
+        document.body.style.cursor = 'col-resize';
+    });
     document.addEventListener('mousemove', (e) => {
         if (!isResizing) return;
         const width = e.clientX - sidebar.getBoundingClientRect().left;
         if (width > 150 && width < 600) sidebar.style.width = width + 'px';
     });
-    document.addEventListener('mouseup', () => { isResizing = false; document.body.style.cursor = 'default'; });
+    document.addEventListener('mouseup', () => {
+        isResizing = false;
+        document.body.style.cursor = 'default';
+    });
+
+    // Add sidebar toggle button
+    const toggleBtn = document.getElementById(toggleBtnId);
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                sidebar.style.width = '0px';
+                sidebar.style.minWidth = '0px';
+                sidebar.style.overflow = 'hidden';
+            } else {
+                sidebar.style.width = '320px';
+                sidebar.style.minWidth = '250px';
+                sidebar.style.overflow = '';
+            }
+        });
+    }
+}
+
+// Backwards compatibility wrapper (if needed) but better to update call sites
+export function setupExplorerResizer() {
+    setupResizer('explorer-resizer', 'explorer-sidebar', 'sidebar-toggle-btn');
 }

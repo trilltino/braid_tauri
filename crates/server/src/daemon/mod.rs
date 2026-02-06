@@ -106,10 +106,42 @@ impl DaemonIntegration {
     async fn setup_file_watcher(&mut self) -> Result<()> {
         let tx = self.file_events.clone();
         
+        let storage_dir = self.config.storage_dir.clone(); // Clone for closure
         let watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
             match res {
                 Ok(event) => {
                     for path in event.paths {
+                        // Filter: Only watch user profile (root files) and AI folder
+                        
+                        let Ok(relative) = path.strip_prefix(&storage_dir) else {
+                            continue;
+                        };
+
+                        let is_relevant = if let Some(first_comp) = relative.components().next() {
+                            let s = first_comp.as_os_str().to_string_lossy();
+                            // Allow "ai" folder
+                            if s == "ai" {
+                                true
+                            }
+                            // Allow "local" folder (User Profile content)
+                            else if s == "local" {
+                                true
+                            }
+                            // Allow root files (metadata)
+                            else if relative.components().count() == 1 {
+                                true 
+                            }
+                            else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        if !is_relevant {
+                            continue;
+                        }
+
                         if let Some(ext) = path.extension() {
                             if ext == "json" || ext == "md" {
                                 let change_type = match event.kind {

@@ -57,7 +57,13 @@ impl BraidNetwork for NativeNetwork {
             req_builder = req_builder.header("subscribe", "true");
         }
         if let Some(peer) = &request.peer {
-            req_builder = req_builder.header("Peer", format!("\"{}\"", peer));
+            // Only add quotes if not already present
+            let peer_val = if peer.starts_with('"') && peer.ends_with('"') {
+                peer.clone()
+            } else {
+                format!("\"{}\"", peer)
+            };
+            req_builder = req_builder.header("Peer", peer_val);
         }
         if let Some(merge_type) = &request.merge_type {
             req_builder = req_builder.header("merge-type", merge_type);
@@ -70,7 +76,9 @@ impl BraidNetwork for NativeNetwork {
             request.extra_headers
         );
 
+        // Force a new connection for subscriptions by disabling connection reuse
         let response = req_builder
+            .header("Connection", "close")
             .send()
             .await
             .map_err(|e| BraidError::Http(e.to_string()))?;
@@ -102,7 +110,7 @@ impl BraidNetwork for NativeNetwork {
         mut request: BraidRequest,
     ) -> Result<async_channel::Receiver<Result<Update>>> {
         request.subscribe = true;
-        let mut req_builder = self.client.get(url).header("subscribe", "true");
+        let mut req_builder = self.client.get(url).header("Subscribe", "true");
 
         for (k, v) in &request.extra_headers {
             req_builder = req_builder.header(k, v);
@@ -125,15 +133,23 @@ impl BraidNetwork for NativeNetwork {
         }
 
         tracing::info!(
-            "[BraidHTTP-Sub-Out] GET {} headers: {:?}",
+            "[BraidHTTP-Sub-Out] GET {} headers: Subscribe=true, merge-type={:?}, Peer={:?}, extra={:?}",
             url,
+            request.merge_type,
+            request.peer,
             request.extra_headers
         );
 
+        // For subscriptions, disable timeout (or set very long) since we're waiting for heartbeats/updates
+        // Heartbeats are every 30s, so we need timeout > 30s. Using 5 minutes for safety.
         let response = req_builder
+            .timeout(std::time::Duration::from_secs(300))
             .send()
             .await
             .map_err(|e| BraidError::Http(e.to_string()))?;
+
+        let status = response.status();
+        tracing::info!("[BraidHTTP-Sub] Response status: {}", status);
 
         let mut headers = std::collections::BTreeMap::new();
         for (k, v) in response.headers() {
@@ -198,23 +214,39 @@ impl BraidNetwork for NativeNetwork {
             // Initialize parser with the HTTP headers and content-length
             // so it can parse the first message (snapshot) correctly
             let mut parser = MessageParser::new_with_state(headers, content_length);
+            tracing::info!("[BraidHTTP-Parser] Started with content_length={}", content_length);
 
             while let Some(chunk_res) = stream.next().await {
                 match chunk_res {
                     Ok(chunk) => {
-                        if let Ok(messages) = parser.feed(&chunk) {
-                            for msg in messages {
-                                let update = crate::client::utils::message_to_update(msg);
-                                let _ = tx.send(Ok(update)).await;
+                        tracing::info!("[BraidHTTP-Parser] Received chunk of {} bytes: {:?}", chunk.len(), 
+                            chunk.iter().take(50).map(|b| *b as char).collect::<String>());
+                        match parser.feed(&chunk) {
+                            Ok(messages) => {
+                                tracing::info!("[BraidHTTP-Parser] Parsed {} messages", messages.len());
+                                for (i, msg) in messages.iter().enumerate() {
+                                    tracing::info!("[BraidHTTP-Parser] Message {}: body_len={}, headers={:?}", 
+                                        i, msg.body.len(), msg.headers.keys().collect::<Vec<_>>());
+                                }
+                                for msg in messages {
+                                    let update = crate::client::utils::message_to_update(msg);
+                                    let _ = tx.send(Ok(update)).await;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!("[BraidHTTP-Parser] Parse error: {}", e);
+                                let _ = tx.send(Err(e)).await;
                             }
                         }
                     }
                     Err(e) => {
+                        tracing::error!("[BraidHTTP-Parser] Stream error: {}", e);
                         let _ = tx.send(Err(BraidError::Http(e.to_string()))).await;
                         break;
                     }
                 }
             }
+            tracing::info!("[BraidHTTP-Parser] Stream ended");
         });
 
         Ok(rx)

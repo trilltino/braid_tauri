@@ -14,8 +14,9 @@
                 "fullscreen": false,
                 "height": 600,
                 "resizable": true,
-                "title": "Braid Tauri",
-                "width": 800
+                "title": "LocalLink",
+                "width": 800,
+                "decorations": false
             }
         ],
         "security": {

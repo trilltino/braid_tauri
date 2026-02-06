@@ -9,7 +9,6 @@ members = [
     "crates/braid-http",
     "crates/server",
     "crates/braid-common",
-    "crates/braid-text",
 ]
 
 [workspace.package]

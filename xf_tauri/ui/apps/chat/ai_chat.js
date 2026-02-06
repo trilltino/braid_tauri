@@ -86,7 +86,7 @@ export async function loadAiConversations() {
             
             item.innerHTML = `
                 <div class="mail-item-header">
-                    <span class="sender-name">🤖 ${conv.name || 'AI Chat'}</span>
+                    <span class="sender-name">[AI] ${conv.name || 'AI Chat'}</span>
                 </div>
                 <div class="mail-subject">AI Assistant</div>
             `;
@@ -270,7 +270,7 @@ export function renderAiMessage(msg) {
     
     bubble.innerHTML = `
         <div class="message-header">
-            <span class="sender">${isBot ? '🤖 ' : ''}${msg.sender}</span>
+            <span class="sender">${isBot ? '[AI] ' : ''}${msg.sender}</span>
             <span class="time">${timeStr}</span>
         </div>
         <div class="message-content">${content}${thinkingDots}</div>

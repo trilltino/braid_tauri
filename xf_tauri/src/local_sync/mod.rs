@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{watch, RwLock};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 /// Daemon control URL (non-Braid REST API)
 pub const DAEMON_URL: &str = "http://127.0.0.1:45678";
@@ -58,14 +58,22 @@ fn get_app_handle_tx() -> watch::Sender<Option<AppHandle>> {
         .clone()
 }
 
-/// Initialize local sync (call once at startup)
+/// Initialize local sync (call once at startup or when root changes)
 pub async fn init(storage_path: PathBuf) -> Result<()> {
-    info!("Local sync initializing at {:?}", storage_path);
+    info!("Local sync (re)initializing at {:?}", storage_path);
 
     // Update config with storage path
     {
         let mut cfg = get_config().write().await;
-        cfg.sync_dir = storage_path.canonicalize()?;
+        cfg.sync_dir = storage_path.clone();
+    }
+
+    // Refresh watcher if app handle is available
+    if let Some(tx) = APP_HANDLE_TX.get() {
+        let rx = tx.subscribe();
+        tokio::spawn(async move {
+            let _ = spawn_filesystem_watcher(rx, storage_path).await;
+        });
     }
 
     // Check if we should skip starting the daemon

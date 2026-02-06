@@ -1,0 +1,31 @@
+# Build artifacts
+target/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Tauri frontend (not needed for server)
+xf_tauri/
+
+# References and docs
+references/
+*.md
+!README.md
+
+# Data and logs
+data/
+logs/
+braid_sync/
+
+# Scripts (Windows-specific)
+*.bat
+
+# Gemini config
+.gemini/

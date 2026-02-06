@@ -43,15 +43,18 @@ impl VersionStore {
     }
 
     pub async fn save(&self) -> Result<()> {
+        tracing::info!("[VersionStore] Saving to: {:?}", self.path);
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)
                 .await
                 .map_err(|e| BraidError::Io(e))?;
         }
         let content = serde_json::to_string_pretty(self).map_err(|e| BraidError::Json(e))?;
+        tracing::info!("[VersionStore] Writing {} bytes", content.len());
         fs::write(&self.path, content)
             .await
             .map_err(|e| BraidError::Io(e))?;
+        tracing::info!("[VersionStore] Save successful");
         Ok(())
     }
 
@@ -112,7 +115,6 @@ fn get_store_path() -> Result<PathBuf> {
     if let Ok(root) = std::env::var("BRAID_ROOT") {
         return Ok(PathBuf::from(root).join(".braidfs").join("versions.json"));
     }
-    let home =
-        dirs::home_dir().ok_or_else(|| BraidError::Fs("Could not find home directory".into()))?;
-    Ok(home.join("http").join(".braidfs").join("versions.json"))
+    // Default to braid_sync in current directory
+    Ok(PathBuf::from("braid_sync").join(".braidfs").join("versions.json"))
 }

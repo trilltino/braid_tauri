@@ -43,7 +43,7 @@ pub struct MountParams {
 }
 
 pub async fn run_server(port: u16, state: DaemonState) -> Result<()> {
-    let mut app = Router::new()
+    let app = Router::new()
         .route("/api/sync", put(handle_sync))
         .route("/api/sync", delete(handle_unsync))
         .route("/api/push", put(handle_push))
@@ -52,11 +52,9 @@ pub async fn run_server(port: u16, state: DaemonState) -> Result<()> {
         .route("/api/identity", put(handle_identity));
 
     #[cfg(feature = "nfs")]
-    {
-        app = app
-            .route("/api/mount", put(handle_mount))
-            .route("/api/mount", delete(handle_unmount));
-    }
+    let app = app
+        .route("/api/mount", put(handle_mount))
+        .route("/api/mount", delete(handle_unmount));
 
     let app = app
         .route(
@@ -475,6 +473,7 @@ async fn handle_unmount(State(state): State<DaemonState>) -> Json<serde_json::Va
 
     Json(serde_json::json!({ "status": "ok" }))
 }
+#[allow(dead_code)]
 async fn handle_push_binary(
     State(state): State<DaemonState>,
     query: axum::extract::Query<SyncParams>,

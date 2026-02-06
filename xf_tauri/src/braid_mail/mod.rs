@@ -8,7 +8,7 @@ pub use braid_http::{BraidClient, BraidRequest, BraidResponse};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 /// Mail feed item from subscription
 #[derive(Debug, Clone, Serialize, Deserialize)]

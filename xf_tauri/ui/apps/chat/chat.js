@@ -1,9 +1,3 @@
-//! Chat UI - Pure Braid Protocol - NO SSE
-//!
-//! All chat operations go through the backend server using pure Braid protocol.
-//! Displays sync status indicators for offline/reconnecting states.
-//! NO SSE - uses braid-http subscriptions only.
-
 import { showToast, invoke } from '../shared/utils.js';
 
 // Braid subscription state
@@ -12,36 +6,48 @@ let chatReconnectAttempts = 0;
 const MAX_CHAT_RECONNECT_ATTEMPTS = 5;
 
 export function initChat() {
-    // Nav Bindings
-    const chatBtn = document.getElementById('btn-chat');
-    if (chatBtn) chatBtn.addEventListener('click', () => window.switchView('chat'));
+    console.log("Initializing Chat...");
 
-    // Chat Input
-    const input = document.getElementById('chat-input');
-    const sendBtn = document.getElementById('chat-send-btn');
-    
-    if (sendBtn) sendBtn.addEventListener('click', () => sendMessage());
-    if (input) {
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
-        });
+    // 1. Start Animation IMMEDIATELY
+    startChatSloganRotation();
+
+    try {
+        // Nav Bindings
+        const chatBtn = document.getElementById('btn-chat');
+        if (chatBtn) chatBtn.addEventListener('click', () => window.switchView('chat'));
+
+        // Chat Input
+        const input = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('chat-send-btn');
+
+        if (sendBtn) sendBtn.addEventListener('click', () => sendMessage());
+        if (input) {
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') sendMessage();
+            });
+        }
+
+    } catch (e) {
+        console.error("Chat binding error:", e);
     }
 
     // Friend Request Logic
-    const addContactBtn = document.getElementById('add-contact-btn');
-    const friendOverlay = document.getElementById('friend-overlay');
-    if (addContactBtn) {
-        addContactBtn.addEventListener('click', () => {
-            friendOverlay.style.display = 'flex';
-            document.getElementById('friend-email')?.focus();
+    // Triggers moved to main.js for global availability (btn-profile, add-contact-header-btn)
+
+    // Wiring Slogan to Add Friend Overlay (View specific trigger)
+    const sloganContainer = document.getElementById('chat-slogan');
+    if (sloganContainer) {
+        sloganContainer.style.cursor = 'pointer';
+        sloganContainer.title = 'Click to Add Friends';
+        sloganContainer.addEventListener('click', () => {
+            if (window.showFriendOverlay) window.showFriendOverlay();
         });
     }
 
-    document.getElementById('friend-close-btn')?.addEventListener('click', () => {
-        friendOverlay.style.display = 'none';
+    // Verify and bind empty state button if present (removed from HTML but safe to keep check)
+    document.getElementById('chat-empty-add-friend-btn')?.addEventListener('click', () => {
+        if (window.showFriendOverlay) window.showFriendOverlay();
     });
-
-    document.getElementById('friend-send-btn')?.addEventListener('click', sendFriendRequest);
 
     // Invite Logic
     document.getElementById('chat-share-btn')?.addEventListener('click', generateInvite);
@@ -61,6 +67,86 @@ export function initChat() {
     startSyncStatusPolling();
 }
 
+function startChatSloganRotation() {
+    const slogans = ['Friends.', 'Braid.', 'the World.', 'Humanity.', 'Communities.'];
+    let currentSloganIndex = 0;
+
+    const target = document.getElementById('chat-slogan-target');
+    const container = document.getElementById('chat-slogan');
+
+    if (target && container) {
+        if (window.chatSloganInterval) clearInterval(window.chatSloganInterval);
+
+        const rotate = () => {
+            target.style.opacity = '0';
+            target.style.transform = 'translateY(10px)';
+
+            setTimeout(() => {
+                currentSloganIndex = (currentSloganIndex + 1) % slogans.length;
+                target.textContent = slogans[currentSloganIndex];
+                target.style.opacity = '1';
+                target.style.transform = 'translateY(0)';
+            }, 500);
+        };
+
+        window.chatSloganInterval = setInterval(rotate, 3000);
+    }
+}
+
+// Initialize Friend Requests Panel
+function initFriendRequestsPanel() {
+    // Add toggle button to header
+    const headerActions = document.querySelector('#chat-view .header-actions');
+    if (headerActions) {
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'friend-requests-toggle';
+        toggleBtn.id = 'friend-requests-toggle-btn';
+        toggleBtn.title = 'Friend Requests';
+        toggleBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <span id="friend-requests-panel-badge" class="friend-requests-badge" style="display: none;">0</span>
+        `;
+        toggleBtn.addEventListener('click', toggleFriendRequestsPanel);
+        headerActions.insertBefore(toggleBtn, headerActions.firstChild);
+    }
+
+    // Close button
+    document.getElementById('friend-requests-close')?.addEventListener('click', closeFriendRequestsPanel);
+
+    // Backdrop click to close
+    document.getElementById('friend-requests-backdrop')?.addEventListener('click', closeFriendRequestsPanel);
+
+    // Keyboard shortcut (Escape to close)
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeFriendRequestsPanel();
+    });
+}
+
+function toggleFriendRequestsPanel() {
+    const panel = document.getElementById('friend-requests-panel');
+    const backdrop = document.getElementById('friend-requests-backdrop');
+
+    if (panel?.classList.contains('open')) {
+        closeFriendRequestsPanel();
+    } else {
+        panel?.classList.add('open');
+        backdrop?.classList.add('open');
+        loadPendingRequests(); // Refresh when opening
+    }
+}
+
+function closeFriendRequestsPanel() {
+    const panel = document.getElementById('friend-requests-panel');
+    const backdrop = document.getElementById('friend-requests-backdrop');
+    panel?.classList.remove('open');
+    backdrop?.classList.remove('open');
+}
+
 // Sync status polling
 function startSyncStatusPolling() {
     setInterval(async () => {
@@ -72,7 +158,7 @@ function startSyncStatusPolling() {
 
 async function updateSyncStatus(conversationId) {
     try {
-        const status = await invoke('get_sync_status', { conversationId });
+        const status = await invoke('get_sync_status_braid', { conversation_id: conversationId });
         renderSyncStatus(status);
     } catch (e) {
         // Server might be down
@@ -120,7 +206,7 @@ export async function loadContacts() {
     if (!contactsList) return;
     
     try {
-        const contacts = await invoke('get_contacts');
+        const contacts = await invoke('get_contacts_braid');
         contactsList.innerHTML = '';
         
         if (contacts.length === 0) {
@@ -152,10 +238,10 @@ export async function openChat(contact) {
     if (window.switchView) window.switchView('chat');
     
     try {
-        const res = await invoke('create_conversation_tauri', {
+        const res = await invoke('create_conversation_braid', {
             name: contact.username,
             participant_emails: [contact.email],
-            isDirectMessage: true,
+            is_direct_message: true,
             sender: window.currentUser.email
         });
         
@@ -171,7 +257,7 @@ export async function loadConversations() {
     const dmList = document.getElementById('chat-conversations-list');
     
     try {
-        const conversations = await invoke('get_conversations_tauri');
+        const conversations = await invoke('get_conversations_braid');
         if (dmList) {
             dmList.innerHTML = '';
             const dms = conversations.filter(c => c.is_direct_message);
@@ -195,7 +281,7 @@ function renderConvItem(conv, container) {
     const name = conv.name || conv.created_by || 'Unnamed';
     item.innerHTML = `
         <div class="mail-item-header">
-            <span class="sender-name">👤 ${name}</span>
+            <span class="sender-name">${name}</span>
         </div>
         <div class="mail-subject">Direct Message</div>
     `;
@@ -326,7 +412,7 @@ export async function loadMessages(conversationId) {
     if (!msgList) return;
     
     try {
-        const messages = await invoke('get_messages_tauri', { conversationId });
+        const messages = await invoke('get_messages_braid', { conversationId });
         msgList.innerHTML = '';
         messages.forEach(renderMessage);
         msgList.scrollTop = msgList.scrollHeight;
@@ -373,7 +459,7 @@ export function renderMessage(msg) {
                     return `<a href="http://localhost:3001/blobs/${blob.hash}" 
                                target="_blank" 
                                class="file-attachment">
-                                📎 ${blob.filename} (${formatFileSize(blob.size)})
+                                ${blob.filename} (${formatFileSize(blob.size)})
                             </a>`;
                 }
             }).join('') + 
@@ -382,7 +468,7 @@ export function renderMessage(msg) {
     
     bubble.innerHTML = `
         <div class="message-header">
-            <span class="sender">${isBot ? '🤖 ' : ''}${msg.sender}</span>
+            <span class="sender">${msg.sender}</span>
             <span class="time">${timeStr}</span>
         </div>
         <div class="message-content">${contentHtml}</div>
@@ -421,12 +507,9 @@ export async function sendMessage() {
     });
 
     try {
-        await invoke('send_message_tauri', {
-            payload: { 
-                conversation_id: window.currentConversationId, 
-                content: content, 
-                sender: window.currentUser.email 
-            }
+        await invoke('send_message_braid', {
+            conversation_id: window.currentConversationId, 
+            content: content
         });
         
         // Server response will come via Braid subscription
@@ -451,11 +534,11 @@ async function attachFile() {
         
         if (selected) {
             // Upload file and send message with attachment
-            await invoke('send_message_with_file', {
+            await invoke('send_message_with_file_braid', {
                 conversationId: window.currentConversationId,
-                content: '📎 File attachment',
-                sender: window.currentUser.email,
-                filePath: selected
+                content: 'File attachment',
+                filePath: selected,
+                sender: window.currentUser.email
             });
         }
     } catch (e) {
@@ -469,11 +552,9 @@ async function sendFriendRequest() {
     if (!email) return showToast("Enter email", "error");
     
     try {
-        await invoke('send_friend_request_tauri', { 
-            toEmail: email, 
-            message, 
-            senderEmail: window.currentUser.email, 
-            senderUsername: window.currentUser.username 
+        await invoke('send_friend_request_braid', {
+            to_email: email,
+            message
         });
         showToast("Request sent!", "success");
         document.getElementById('friend-overlay').style.display = 'none';
@@ -483,49 +564,141 @@ async function sendFriendRequest() {
 }
 
 export async function loadPendingRequests() {
+    // Legacy sidebar list (keep for compatibility)
     const reqList = document.getElementById('pending-requests-list');
     const badge = document.getElementById('pending-requests-badge');
-    if (!reqList) return;
+
+    // New panel elements
+    const incomingList = document.getElementById('incoming-requests-list');
+    const outgoingList = document.getElementById('outgoing-requests-list');
+    const panelBadge = document.getElementById('friend-requests-panel-badge');
+    const emptyState = document.getElementById('friend-requests-empty');
+    const incomingSection = document.getElementById('incoming-requests-section');
+    const outgoingSection = document.getElementById('outgoing-requests-section');
     
     try {
-        const requests = await invoke('get_pending_friend_requests');
-        reqList.innerHTML = '';
-        
+        const requests = await invoke('get_pending_requests_braid');
+
+        // Separate incoming and outgoing
+        const incoming = requests.filter(r => r.to_email === window.currentUser?.email);
+        const outgoing = requests.filter(r => r.from_email === window.currentUser?.email);
+        const totalPending = incoming.length + outgoing.length;
+
+        // Update legacy sidebar badge
         if (badge) {
-            badge.style.display = requests.length > 0 ? 'block' : 'none';
-            badge.textContent = requests.length;
+            badge.style.display = totalPending > 0 ? 'block' : 'none';
+            badge.textContent = totalPending;
         }
         
-        if (requests.length === 0) {
-            reqList.innerHTML = '<div class="empty-state-mini">No requests</div>';
-            return;
+        // Update panel badge
+        if (panelBadge) {
+            panelBadge.style.display = totalPending > 0 ? 'flex' : 'none';
+            panelBadge.textContent = totalPending;
         }
-        
-        requests.forEach(req => {
-            const item = document.createElement('div');
-            item.className = 'request-item';
-            item.innerHTML = `
-                <div class="contact-avatar">${req.from_username.charAt(0).toUpperCase()}</div>
-                <div class="contact-info">
-                    <span class="contact-name">${req.from_username}</span>
-                </div>
-                <div class="request-actions">
-                    <button class="icon-btn small accept-req">✅</button>
-                    <button class="icon-btn small reject-req">✕</button>
-                </div>
-            `;
-            item.querySelector('.accept-req').addEventListener('click', () => respondToRequest(req.id, 'accept'));
-            item.querySelector('.reject-req').addEventListener('click', () => respondToRequest(req.id, 'reject'));
-            reqList.appendChild(item);
+
+        // Legacy sidebar render
+        if (reqList) {
+            reqList.innerHTML = '';
+            if (requests.length === 0) {
+                reqList.innerHTML = '<div class="empty-state-mini">No requests</div>';
+            } else {
+                requests.forEach(req => {
+                    const item = document.createElement('div');
+                    item.className = 'request-item';
+                    item.innerHTML = `
+                        <div class="contact-avatar">${req.from_username.charAt(0).toUpperCase()}</div>
+                        <div class="contact-info">
+                            <span class="contact-name">${req.from_username}</span>
+                        </div>
+                        <div class="request-actions">
+                            <button class="icon-btn small accept-req">Accept</button>
+                            <button class="icon-btn small reject-req">Reject</button>
+                        </div>
+                    `;
+                    item.querySelector('.accept-req').addEventListener('click', () => respondToRequest(req.id, 'accept'));
+                    item.querySelector('.reject-req').addEventListener('click', () => respondToRequest(req.id, 'reject'));
+                    reqList.appendChild(item);
+                });
+            }
+        }
+
+        // New panel render (xfmail-style cards)
+        if (incomingList) incomingList.innerHTML = '';
+        if (outgoingList) outgoingList.innerHTML = '';
+
+        // Show/hide sections based on data
+        if (incomingSection) incomingSection.style.display = incoming.length > 0 ? 'block' : 'none';
+        if (outgoingSection) outgoingSection.style.display = outgoing.length > 0 ? 'block' : 'none';
+        if (emptyState) emptyState.style.display = totalPending === 0 ? 'block' : 'none';
+
+        // Render incoming requests
+        incoming.forEach(req => {
+            const card = createFriendRequestCard(req, 'incoming');
+            incomingList?.appendChild(card);
         });
+
+        // Render outgoing requests
+        outgoing.forEach(req => {
+            const card = createFriendRequestCard(req, 'outgoing');
+            outgoingList?.appendChild(card);
+        });
+
     } catch (e) { 
         console.error("Load requests failed:", e); 
     }
 }
 
+// Create a friend request card (xfmail-style)
+function createFriendRequestCard(req, type) {
+    const card = document.createElement('div');
+    card.className = `friend-request-card ${type}`;
+
+    const initial = (type === 'incoming' ? req.from_username : req.to_email).charAt(0).toUpperCase();
+    const name = type === 'incoming' ? req.from_username : req.to_email;
+    const email = type === 'incoming' ? req.from_email : req.to_email;
+
+    if (type === 'incoming') {
+        card.innerHTML = `
+        <div class="friend-request-card-header">
+            <div class="friend-request-avatar">${initial}</div>
+            <div class="friend-request-info">
+                <div class="friend-request-name">${name}</div>
+                <div class="friend-request-email">${email}</div>
+            </div>
+        </div>
+        ${req.message ? `<div class="friend-request-message">${escapeHtml(req.message)}</div>` : ''}
+        <div class="friend-request-actions">
+            <button class="friend-request-btn accept" data-action="accept" data-id="${req.id}">
+                Accept
+            </button>
+            <button class="friend-request-btn reject" data-action="reject" data-id="${req.id}">
+                Decline
+            </button>
+        </div>
+    `;
+
+        card.querySelector('[data-action="accept"]')?.addEventListener('click', () => respondToRequest(req.id, 'accept'));
+        card.querySelector('[data-action="reject"]')?.addEventListener('click', () => respondToRequest(req.id, 'reject'));
+    } else {
+        // Outgoing request
+        card.innerHTML = `
+        <div class="friend-request-card-header">
+            <div class="friend-request-avatar">${initial}</div>
+            <div class="friend-request-info">
+                <div class="friend-request-name">${name}</div>
+                <div class="friend-request-email">${email}</div>
+            </div>
+        </div>
+        <div class="friend-request-status">Waiting for response...</div>
+    `;
+    }
+
+    return card;
+}
+
 async function respondToRequest(requestId, action) {
     try {
-        await invoke('respond_friend_request_tauri', { requestId, action });
+        await invoke('respond_to_request_braid', { requestId, action });
         showToast(`Request ${action}ed!`, "success");
         loadPendingRequests();
         loadContacts();
@@ -578,7 +751,7 @@ window.addEventListener('online', async () => {
         renderSyncStatus({ status: 'reconnecting' });
         
         try {
-            const result = await invoke('sync_drafts', { 
+            const result = await invoke('sync_drafts_braid', { 
                 conversationId: window.currentConversationId 
             });
             

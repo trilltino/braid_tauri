@@ -56,10 +56,12 @@ use handlers::{
     // Auth
     signup,
     update_presence,
+    update_profile,
     // Blob
     upload_blob,
+    list_rooms,
 };
-use mail::{get_mail_feed, get_mail_post, is_subscribed, send_mail, subscribe_mail, MailManager};
+use mail::{get_mail_feed, get_mail_post, is_subscribed, send_mail, set_mail_auth, subscribe_mail, MailManager};
 use store::JsonChatStore;
 use wiki::WikiManager;
 
@@ -173,18 +175,20 @@ pub async fn run() -> anyhow::Result<()> {
         .route("/auth/login", axum::routing::post(login))
         .route("/auth/logout", axum::routing::post(logout))
         .route("/auth/me", axum::routing::get(me))
+        .route("/auth/profile/{user_id}", axum::routing::put(update_profile))
         .route("/users", get(list_users))
         // Core Braid protocol endpoints (NO SSE)
-        .route("/chat/:room_id", get(get_chat_room).put(put_message))
+        .route("/chat/rooms", get(list_rooms))
+        .route("/chat/{room_id}", get(get_chat_room).put(put_message))
         // Pure Braid subscription - NO SSE, uses braid-http protocol
-        .route("/chat/:room_id/subscribe", get(braid_subscribe))
+        .route("/chat/{room_id}/subscribe", get(braid_subscribe))
         // Blob endpoints (braid-blob)
         .route("/blobs", axum::routing::post(upload_blob))
-        .route("/blobs/:hash", get(get_blob))
+        .route("/blobs/{hash}", get(get_blob))
         // Room status and offline support
-        .route("/chat/:room_id/status", get(get_room_status))
+        .route("/chat/{room_id}/status", get(get_room_status))
         .route(
-            "/chat/:room_id/drafts",
+            "/chat/{room_id}/drafts",
             get(get_drafts).post(save_draft).delete(clear_drafts),
         )
         // Friends system
@@ -194,21 +198,22 @@ pub async fn run() -> anyhow::Result<()> {
             get(list_pending_requests).post(send_friend_request),
         )
         .route(
-            "/friends/requests/:request_id",
+            "/friends/requests/{request_id}",
             axum::routing::put(respond_friend_request),
         )
         // Chat-specific extensions
         .route(
-            "/chat/:room_id/presence",
+            "/chat/{room_id}/presence",
             get(get_presence).put(update_presence),
         )
-        .route("/chat/:room_id/typing", get(get_typing).put(send_typing))
+        .route("/chat/{room_id}/typing", get(get_typing).put(send_typing))
         // Mail/Feed endpoints
         .route("/mail/subscribe", axum::routing::post(subscribe_mail))
         .route("/mail/feed", get(get_mail_feed))
         .route("/mail/subscribed", get(is_subscribed))
-        .route("/mail/post/:url", get(get_mail_post))
+        .route("/mail/post/{url}", get(get_mail_post))
         .route("/mail/send", axum::routing::post(send_mail))
+        .route("/mail/auth", axum::routing::post(set_mail_auth))
         // Health check
         .route("/health", get(health_check))
         .with_state(app_state)

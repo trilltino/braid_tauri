@@ -1,5 +1,5 @@
 import { showToast, invoke } from '../shared/utils.js';
-import { setupQuill } from './editor.js';
+import { setupQuill, setupExplorerResizer } from './editor.js';
 
 export function initExplorer() {
     // Setup Quill editor immediately so it's ready when files are clicked
@@ -13,32 +13,74 @@ export function initExplorer() {
     if (editBtn) editBtn.addEventListener('click', enableExplorerEdit);
 
     const refreshBtn = document.getElementById('explorer-refresh-btn');
-    if (refreshBtn) refreshBtn.addEventListener('click', loadExplorerTree);
+    if (refreshBtn) refreshBtn.addEventListener('click', () => {
+        loadExplorerTree('explorer-tree', window.currentExplorerSection);
+    });
 
-    // Initial load
-    loadExplorerTree();
+    // Setup resizer and toggle
+    setupExplorerResizer();
 }
 
-export async function loadExplorerTree() {
-    console.log("Loading Explorer Tree...");
-    const treeContainer = document.getElementById('explorer-tree');
-    if (treeContainer) treeContainer.innerHTML = '<div class="loading-state">Syncing...</div>';
+export async function loadExplorerTree(containerId = 'explorer-tree', section = null) {
+    console.log(`Loading Explorer Tree into ${containerId} (Section: ${section})...`);
+    const treeContainer = document.getElementById(containerId);
 
     try {
-        const nodes = await invoke('get_braid_explorer_tree');
-        renderExplorerTree(nodes || []);
+        const nodes = await invoke('get_braid_explorer_tree', { section: section });
+        console.log("Explorer nodes received:", nodes);
+        renderExplorerTree(nodes || [], treeContainer, 0, section);
     } catch (e) {
         console.error("Failed to load explorer tree:", e);
         if (treeContainer) treeContainer.innerHTML = `<div class="error-state">Sync Error: ${e}</div>`;
     }
 }
 
-export function renderExplorerTree(nodes, parentEl = null, level = 0) {
-    const container = parentEl || document.getElementById('explorer-tree');
-    if (!parentEl) container.innerHTML = '';
+export function renderExplorerTree(nodes, container, level = 0, section = null) {
+    if (!container) return;
+    if (level === 0) container.innerHTML = '';
 
     if (!nodes || nodes.length === 0) {
-        if (!parentEl) container.innerHTML = '<div class="empty-state">No files synced. Enter a URL above to start.</div>';
+        if (level === 0) {
+            let emptyHtml = `
+                <div class="empty-state-mini" style="padding: 24px; text-align: center;">
+                    <p style="margin-bottom: 12px;">No files found.</p>
+                    <button class="accent-btn small" onclick="window.loadExplorerTree('${container.id}', '${section || ''}')">Reload</button>
+                </div>`;
+
+            if (section === 'braid.org') {
+                emptyHtml = `
+                <div class="empty-state-mini" style="padding: 24px; text-align: center;">
+                    <p style="margin-bottom: 12px;">Braid Wiki not found locally.</p>
+                    <button class="accent-btn small" id="download-wiki-btn-${container.id}">Download Braid Wiki</button>
+                </div>`;
+            } else if (section === 'local') {
+                emptyHtml = `
+                <div class="empty-state-mini" style="padding: 24px; text-align: center;">
+                    <p style="margin-bottom: 12px;">Local files empty.</p>
+                    <p style="font-size: 11px; opacity: 0.6;">Create files to see them here.</p>
+                </div>`;
+            }
+
+            container.innerHTML = emptyHtml;
+
+            // Bind download button if present
+            const downloadBtn = document.getElementById(`download-wiki-btn-${container.id}`);
+            if (downloadBtn) {
+                downloadBtn.addEventListener('click', async () => {
+                    downloadBtn.disabled = true;
+                    downloadBtn.textContent = "Downloading...";
+                    try {
+                        await invoke('download_default_wiki');
+                        showToast("Wiki downloaded!", "success");
+                        loadExplorerTree(container.id, section);
+                    } catch (e) {
+                        showToast("Download failed: " + e, "error");
+                        downloadBtn.disabled = false;
+                        downloadBtn.textContent = "Try Again";
+                    }
+                });
+            }
+        }
         return;
     }
 
@@ -78,7 +120,7 @@ export function renderExplorerTree(nodes, parentEl = null, level = 0) {
         if (node.is_dir && node.children && node.children.length > 0) {
             const childContainer = document.createElement('div');
             childContainer.className = 'tree-children';
-            renderExplorerTree(node.children, childContainer, level + 1);
+            renderExplorerTree(node.children, childContainer, level + 1, section);
             li.appendChild(childContainer);
         }
         ul.appendChild(li);
@@ -142,20 +184,34 @@ export async function handleFileClick(node) {
     if (urlBar) urlBar.value = node.relative_path;
 
     // Ensure Quill is initialized
-    if (!window.quill) {
-        console.log("Re-initializing Quill...");
-        setupQuill(() => saveExplorerFile(true));
+    let quill = window.quill;
+    const isAi = window.activeChatView === 'ai';
+    const editorSelector = isAi ? '#ai-quill-container' : '#quill-editor-container';
+
+    if (window.quillInstances && window.quillInstances[editorSelector]) {
+        quill = window.quillInstances[editorSelector];
     }
+
+    if (!quill) {
+        console.log("Re-initializing Quill...");
+        setupQuill(() => saveExplorerFile(true), editorSelector);
+        quill = window.quillInstances[editorSelector];
+    }
+
+    // Update global active quill for saveExplorerFile to use
+    window.activeQuill = quill;
 
     const isNetwork = node.is_network;
     const domain = isNetwork && node.relative_path.includes("braid.org") ? "braid.org" : "unknown";
 
-    const loadContent = async (isManualReload = false) => {
+    const loadContent = async (isManualReload = false, retryCount = 0) => {
         try {
             let content, versionId;
             if (isNetwork) {
                 const normalizedPath = node.relative_path.replace(/\\/g, '/');
                 const url = normalizedPath.startsWith('http') ? normalizedPath : `https://${normalizedPath}`;
+
+                // Attempt load
                 const page = await invoke('get_sync_editor_page', { url });
                 content = page.content;
                 versionId = page.version;
@@ -168,42 +224,62 @@ export async function handleFileClick(node) {
                 content = await invoke('read_explorer_file', { relativePath: node.relative_path });
             }
 
-            if (window.quill) {
-                window.quill.setText('');
-                if (node.name.endsWith('.md')) window.quill.setText(content);
-                else if (node.name.endsWith('.html')) window.quill.clipboard.dangerouslyPasteHTML(content);
-                else window.quill.setText(content || '');
+            if (quill) {
+                // Basic Image Detection (very naive, assumes text content is not binary garbage)
+                if (node.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                    quill.setText(`[Image File: ${node.name}]\n(Binary rendering not yet supported via text editor)`);
+                    // TODO: Base64 fetch
+                } else {
+                    quill.setText('');
+                    if (node.name.endsWith('.md')) quill.setText(content);
+                    else if (node.name.endsWith('.html')) quill.clipboard.dangerouslyPasteHTML(content);
+                    else quill.setText(content || '');
+                }
             }
 
             const syncStatus = document.getElementById("explorer-sync-status");
             if (syncStatus) {
-                if (versionId) syncStatus.innerHTML = `<span style="color:#a855f7">Braid Ver: ${versionId}</span>`;
+                if (versionId) syncStatus.innerHTML = `<span style="color:#a855f7">Ver: ${versionId}</span>`;
                 else syncStatus.textContent = isNetwork ? "Network Resource" : "Local File";
             }
+
+            // Enable editor if successful
+            if (quill) {
+                quill.enable(true);
+                // Only focus if we didn't just type manually
+                // quill.focus(); 
+            }
+
         } catch (e) {
-            showToast("Failed to read file: " + e, "error");
+            console.warn("Load failed", e);
+            const errStr = e.toString();
+
+            // Smart Auth Handling: Retry ONLY ONCE
+            if (isNetwork && retryCount < 1) {
+                const shouldRetry = confirm(`Failed to load ${node.name}. Do you want to enter an Access Cookie?`);
+                if (shouldRetry) {
+                    const domain = isNetwork && node.relative_path.includes("braid.org") ? "braid.org" : "unknown";
+                    const cookie = prompt(`Enter Cookie for ${domain}`);
+                    if (cookie) {
+                        try {
+                            await invoke('set_sync_editor_cookie', { domain, value: cookie });
+                            // Retry once
+                            await loadContent(true, retryCount + 1);
+                        } catch (cookieErr) {
+                            showToast("Failed to set cookie: " + cookieErr, "error");
+                        }
+                    }
+                } else {
+                    showToast("Load aborted", "info");
+                }
+            } else {
+                showToast("Failed to read file: " + e, "error");
+                if (window.quill) window.quill.setText(`Error loading file:\n${e}`);
+            }
         }
     };
 
     await loadContent(false);
-
-    if (window.quill) {
-        if (!isNetwork) {
-            window.quill.enable(true);
-            window.quill.focus();
-        } else {
-            const cookie = prompt(`Enter Access Token/Cookie for ${domain}`);
-            if (cookie) {
-                await invoke('set_sync_editor_cookie', { domain, value: cookie });
-                window.quill.enable(true);
-                window.quill.focus();
-                await loadContent(true);
-            } else {
-                window.quill.enable(false);
-                document.getElementById("explorer-sync-status").textContent = "Read Only (Cookie required)";
-            }
-        }
-    }
 }
 
 export function enableExplorerEdit() {
@@ -217,9 +293,10 @@ export function enableExplorerEdit() {
 }
 
 export async function saveExplorerFile(silent = false) {
-    if (!window.activeNode || !window.quill) return;
+    const quill = window.activeQuill || window.quill;
+    if (!window.activeNode || !quill) return;
     try {
-        const content = window.quill.getText();
+        const content = quill.getText();
         await invoke('write_explorer_file', {
             relativePath: window.activeNode.relative_path,
             content: content

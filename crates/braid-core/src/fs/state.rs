@@ -51,4 +51,6 @@ pub struct DaemonState {
     pub inode_db: Arc<PMutex<Connection>>,
     pub tx_cmd: async_channel::Sender<Command>,
     pub debouncer: Arc<DebouncedSyncManager>,
+    /// URLs being managed by the local HTTP 209 server (polling)
+    pub local_server_managed: Arc<RwLock<std::collections::HashSet<String>>>,
 }

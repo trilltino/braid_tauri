@@ -2,6 +2,7 @@
 //!
 //! Includes both legacy HTTP commands and new pure Braid protocol commands.
 
+
 // Braid protocol commands - defined directly in this module for Tauri macro compatibility
 use crate::chat::{parse_braid_update, BraidRequest, ChatBraidExt, ChatManager};
 use crate::local_sync;
@@ -26,6 +27,7 @@ pub async fn signup_braid(
     email: String,
     username: String,
     password: String,
+    avatar_blob_hash: Option<String>,
     state: State<'_, BraidAppState>,
 ) -> Result<serde_json::Value, String> {
     let manager = state.client.lock().await;
@@ -37,6 +39,7 @@ pub async fn signup_braid(
         "email": email,
         "username": username,
         "password": password,
+        "avatar_blob_hash": avatar_blob_hash,
     });
 
     let req = BraidRequest::new()
@@ -212,6 +215,65 @@ pub async fn stop_braid_subscription(_state: State<'_, BraidAppState>) -> Result
 }
 
 #[tauri::command]
+pub async fn get_sync_status_braid(
+    conversation_id: String,
+    state: State<'_, BraidAppState>,
+) -> Result<serde_json::Value, String> {
+    let manager = state.client.lock().await;
+    let client = manager.client();
+    let base_url = &manager.base_url;
+
+    let url = format!("{}/chat/{}/status", base_url, conversation_id);
+
+    match client.get(&url).await {
+        Ok(resp) => {
+            let body_str = String::from_utf8_lossy(&resp.body);
+            let status: serde_json::Value =
+                serde_json::from_str(&body_str).map_err(|e| e.to_string())?;
+            Ok(status)
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn update_profile_braid(
+    user_id: String,
+    username: Option<String>,
+    email: Option<String>,
+    password: Option<String>,
+    avatar_blob_hash: Option<String>,
+    state: State<'_, BraidAppState>,
+) -> Result<serde_json::Value, String> {
+    let manager = state.client.lock().await;
+    let client = manager.client();
+    let base_url = &manager.base_url;
+
+    let url = format!("{}/auth/profile/{}", base_url, user_id);
+    let body = serde_json::json!({
+        "username": username,
+        "email": email,
+        "password": password,
+        "avatar_blob_hash": avatar_blob_hash,
+    });
+
+    let req = auth_req(&manager)
+        .with_method("PUT")
+        .with_content_type("application/json")
+        .with_body(body.to_string());
+
+    match client.fetch(&url, req).await {
+        Ok(resp) => {
+            let body_str = String::from_utf8_lossy(&resp.body);
+            let user: serde_json::Value =
+                serde_json::from_str(&body_str).map_err(|e| e.to_string())?;
+            Ok(user)
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn send_friend_request_braid(
     to_email: String,
     message: Option<String>,
@@ -311,6 +373,112 @@ pub async fn get_contacts_braid(
 }
 
 #[tauri::command]
+pub async fn get_conversations_braid(
+    state: State<'_, BraidAppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let manager = state.client.lock().await;
+    let client = manager.client();
+    let base_url = &manager.base_url;
+
+    let url = format!("{}/chat/rooms", base_url);
+
+    match client.get(&url).await {
+        Ok(resp) => {
+            let body_str = String::from_utf8_lossy(&resp.body);
+            let rooms: Vec<serde_json::Value> =
+                serde_json::from_str(&body_str).map_err(|e| e.to_string())?;
+            
+            // Map to frontend expected format
+            let conversations = rooms.into_iter().map(|mut r| {
+                if let Some(obj) = r.as_object_mut() {
+                    let participants_len = obj.get("participants")
+                        .and_then(|p| p.as_array())
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    // Infer DM status from participants count
+                    obj.insert("is_direct_message".to_string(), serde_json::Value::Bool(participants_len == 2));
+                }
+                r
+            }).collect();
+            
+            Ok(conversations)
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn create_conversation_braid(
+    name: String,
+    participant_emails: Vec<String>,
+    is_direct_message: bool,
+    sender: String,
+    state: State<'_, BraidAppState>,
+) -> Result<serde_json::Value, String> {
+    let manager = state.client.lock().await;
+    let client = manager.client();
+    let base_url = &manager.base_url;
+
+    // Use UUID for new room ID
+    let room_id = uuid::Uuid::new_v4().to_string();
+    let url = format!("{}/chat/{}", base_url, room_id);
+
+    // Call GET to create the room implicitly (backend creates if missing)
+    match client.get(&url).await {
+        Ok(_) => {
+             // Return constructed room object for UI
+             Ok(serde_json::json!({
+                 "id": room_id,
+                 "name": name,
+                 "is_direct_message": is_direct_message,
+                 "participants": participant_emails,
+                 "created_by": sender,
+                 "created_at": chrono::Utc::now().to_rfc3339()
+             }))
+        }
+        Err(e) => Err(e.to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn create_ai_chat_braid(
+    name: String,
+    sender: String,
+    state: State<'_, BraidAppState>,
+) -> Result<serde_json::Value, String> {
+    let manager = state.client.lock().await;
+    let client = manager.client();
+    let base_url = &manager.base_url;
+
+    let room_id = uuid::Uuid::new_v4().to_string();
+    let url = format!("{}/chat/{}", base_url, room_id);
+
+    match client.get(&url).await {
+        Ok(_resp) => {
+             // AI Chat doesn't need special handling on creation in pure Braid protocol
+             // The act of talking to @BraidBot! happens in messages.
+             // But we need to return the expected structure.
+             // ai.js expects: conversation object or wrapper
+             
+             let conversation = serde_json::json!({
+                 "id": room_id,
+                 "name": name,
+                 "is_direct_message": false,
+                 "participants": [], // AI rooms have no human participants initially
+                 "created_by": sender,
+             });
+
+             Ok(serde_json::json!({
+                 "conversation": conversation,
+                 "admin_token": "dummy_token" // Backward compat for ai.js
+             }))
+        }
+        Err(e) => Err(e.to_string())
+    }
+}
+
+
+#[tauri::command]
 pub async fn sync_drafts_braid(
     conversation_id: String,
     state: State<'_, BraidAppState>,
@@ -399,28 +567,141 @@ pub async fn upload_file_braid(
     Ok(blob_ref)
 }
 
+#[tauri::command]
+pub async fn send_message_with_file_braid(
+    conversation_id: String,
+    content: String,
+    file_path: String,
+    _sender: String, // Kept for frontend compat, unused in pure protocol (server infers from token)
+    state: State<'_, BraidAppState>,
+) -> Result<serde_json::Value, String> {
+    let manager = state.client.lock().await;
+    let base_url = &manager.base_url;
+
+    // 1. Upload File
+    let upload_url = format!("{}/blobs", base_url);
+    let path = std::path::PathBuf::from(&file_path);
+    
+    let file_content = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unnamed")
+        .to_string();
+    let file_size = file_content.len() as u64;
+
+    let http_client = reqwest::Client::new();
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(file_content).file_name(file_name.clone()),
+    );
+
+    let resp = http_client
+        .post(&upload_url)
+        .header("Merge-Type", "antimatter")
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Upload request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Upload failed: {}", resp.status()));
+    }
+
+    let blob_ref: serde_json::Value = resp.json().await.map_err(|e| format!("Failed to parse blob ref: {}", e))?;
+
+    // 2. Send Message with Link
+    let chat_url = format!("{}/chat/{}", base_url, conversation_id);
+    
+    let body = serde_json::json!({
+        "content": content,
+        "message_type": { 
+            "type": "file", 
+            "data": { 
+                "filename": file_name,
+                "size": file_size
+            }
+        },
+        "blob_refs": [blob_ref]
+    });
+
+    let req = auth_req(&manager)
+        .with_method("PUT")
+        .with_content_type("application/json")
+        .with_body(body.to_string());
+
+    match manager.client().fetch(&chat_url, req).await {
+        Ok(resp) => {
+            let body_str = String::from_utf8_lossy(&resp.body);
+            let msg: serde_json::Value =
+                serde_json::from_str(&body_str).map_err(|e| e.to_string())?;
+            Ok(msg)
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 // ========== MAIL/FEED COMMANDS ==========
 
 #[tauri::command]
 pub async fn subscribe_braid_mail(
     state: State<'_, BraidAppState>,
+    app_handle: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
     let manager = state.client.lock().await;
-    let client = manager.client();
-    let base_url = &manager.base_url;
+    let client = manager.client().clone();
+    let base_url = manager.base_url.clone();
+    drop(manager);
 
-    let url = format!("{}/mail/subscribe", base_url);
-    let req = BraidRequest::new().with_method("POST");
+    // 1. Tell server to subscribe to external feed
+    let sub_url = format!("{}/mail/subscribe", base_url);
+    let sub_body = serde_json::json!({
+        "feed_url": "https://mail.braid.org/feed"
+    });
 
-    match client.fetch(&url, req).await {
-        Ok(resp) => {
-            let body_str = String::from_utf8_lossy(&resp.body);
-            let result: serde_json::Value =
-                serde_json::from_str(&body_str).map_err(|e| e.to_string())?;
-            Ok(result)
+    let sub_req = BraidRequest::new()
+        .with_method("POST")
+        .with_content_type("application/json")
+        .with_body(sub_body.to_string());
+
+    let _ = client.fetch(&sub_url, sub_req).await.map_err(|e| e.to_string())?;
+
+    // 2. Start Braid subscription to server's mail feed
+    let feed_url = format!("{}/mail/feed", base_url);
+    let feed_req = BraidRequest::new().subscribe().with_heartbeat(30);
+
+    let mut subscription = client
+        .subscribe(&feed_url, feed_req)
+        .await
+        .map_err(|e| format!("Mail feed subscribe failed: {}", e))?;
+
+    tokio::spawn(async move {
+        info!("[BraidCommands] Starting Mail Feed subscription loop");
+        loop {
+            match subscription.next().await {
+                Some(Ok(update)) => {
+                    if let Some(body) = &update.body {
+                        let body_str = String::from_utf8_lossy(body);
+                        if let Ok(items) = serde_json::from_str::<serde_json::Value>(&body_str) {
+                            info!("[BraidCommands] Emitting mail-update with {} items", 
+                                items.as_array().map(|a| a.len()).unwrap_or(0));
+                            let _ = app_handle.emit("mail-update", items);
+                        }
+                    }
+                }
+                Some(Err(e)) => {
+                    error!("[BraidCommands] Mail subscription error: {}", e);
+                    break;
+                }
+                None => {
+                    info!("[BraidCommands] Mail subscription ended");
+                    break;
+                }
+            }
         }
-        Err(e) => Err(e.to_string()),
-    }
+    });
+
+    Ok(serde_json::json!({"status": "subscribed", "message": "Mail subscription active"}))
 }
 
 #[tauri::command]
@@ -429,14 +710,46 @@ pub async fn is_braid_mail_subscribed(state: State<'_, BraidAppState>) -> Result
     let client = manager.client();
     let base_url = &manager.base_url;
 
-    let url = format!("{}/mail/subscribed", base_url);
-
+    let url = format!("{}/mail/subscription", base_url);
+    
     match client.get(&url).await {
         Ok(resp) => {
             let body_str = String::from_utf8_lossy(&resp.body);
-            let result: bool = serde_json::from_str(&body_str).map_err(|e| e.to_string())?;
-            Ok(result)
+            // API returns boolean true/false
+            if let Ok(status) = serde_json::from_str::<bool>(&body_str) {
+                Ok(status)
+            } else {
+                // Fallback parsing if wrapped
+                Ok(false)
+            }
         }
+        Err(_) => Ok(false), // Assume false on error
+    }
+}
+
+#[tauri::command]
+pub async fn set_mail_auth(
+    state: State<'_, BraidAppState>,
+    cookie: Option<String>,
+    email: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let manager = state.client.lock().await;
+    let client = manager.client();
+    let base_url = &manager.base_url;
+
+    let url = format!("{}/mail/auth", base_url);
+    let body = serde_json::json!({
+        "cookie": cookie,
+        "email": email
+    });
+
+    let req = BraidRequest::new()
+        .with_method("POST")
+        .with_content_type("application/json")
+        .with_body(body.to_string());
+
+    match client.fetch(&url, req).await {
+        Ok(_) => Ok(serde_json::json!({"success": true})),
         Err(e) => Err(e.to_string()),
     }
 }
@@ -462,11 +775,13 @@ pub async fn get_mail_feed(
     }
 }
 
+// Deprecated or Aliased: This used to bypass the server. 
+// Now we alias it to get_mail_feed so the UI gets consistent hydrated data.
 #[tauri::command]
 pub async fn get_mail_feed_braid(
     state: State<'_, BraidAppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    // Same as get_mail_feed - server handles the network fetching
+    // Reuse the main get_mail_feed logic to ensure hydration
     get_mail_feed(state).await
 }
 
@@ -507,55 +822,53 @@ pub async fn send_mail(
 // ========== EXPLORER / SYNC EDITOR COMMANDS ==========
 
 #[tauri::command]
-pub async fn get_braid_explorer_tree() -> Result<Vec<FileNode>, String> {
-    let mut tree = Vec::new();
+pub async fn get_braid_explorer_tree(section: Option<String>) -> Result<Vec<FileNode>, String> {
+    // Determine root based on section
+    let (scan_root, folder_root) = match section.as_deref() {
+        Some("braid.org") => (braid_common::braid_org_dir(), braid_common::braid_org_dir()),
+        Some("local") => (braid_common::braid_root(), braid_common::braid_root()), // Scan root for LinkedLocal
+        Some("ai") => (braid_common::ai_dir(), braid_common::ai_dir()),
+        _ => (braid_common::braid_root(), braid_common::braid_root()),
+    };
+    
+    tracing::info!("[Explorer] Scanning tree at: {:?} (Section: {:?})", scan_root, section);
+    
+    if !scan_root.exists() {
+        if section.is_none() {
+             tracing::warn!("[Explorer] braid_sync directory does not exist: {:?}", scan_root);
+        }
+        return Ok(vec![]);
+    }
+    
+    // Helper to get raw tree
+    let mut tree = scan_dir_helper(&scan_root, &folder_root, section.as_deref() == Some("braid.org"))?;
 
-    // 1. Scan braid.org (Network/Wiki folder)
-    let braid_org = braid_common::braid_org_dir();
-    if braid_org.exists() {
-        let mut org_node = FileNode {
-            name: "braid.org".to_string(),
-            is_dir: true,
-            is_network: true,
-            relative_path: "braid.org".to_string(),
-            full_path: braid_org.to_string_lossy().to_string(),
-            children: Vec::new(),
-        };
-        org_node.children = scan_dir_helper(&braid_org, &braid_org, true)?;
-        tree.push(org_node);
+    // Filter for "LinkedLocal" mode (section="local")
+    if section.as_deref() == Some("local") {
+        tree.retain(|node| node.name == "local" || node.name == "ai");
     }
 
-    // 2. Scan peers
-    let peers = braid_common::peers_dir();
-    if peers.exists() {
-        let mut peers_node = FileNode {
-            name: "peers".to_string(),
-            is_dir: true,
-            is_network: false,
-            relative_path: "peers".to_string(),
-            full_path: peers.to_string_lossy().to_string(),
-            children: Vec::new(),
-        };
-        peers_node.children = scan_dir_helper(&peers, &peers, false)?;
-        tree.push(peers_node);
-    }
-
-    // 3. Scan ai
-    let ai = braid_common::ai_dir();
-    if ai.exists() {
-        let mut ai_node = FileNode {
-            name: "ai".to_string(),
-            is_dir: true,
-            is_network: false,
-            relative_path: "ai".to_string(),
-            full_path: ai.to_string_lossy().to_string(),
-            children: Vec::new(),
-        };
-        ai_node.children = scan_dir_helper(&ai, &ai, false)?;
-        tree.push(ai_node);
-    }
-
+    tracing::info!("[Explorer] Found {} top-level items in {:?}", tree.len(), scan_root);
+    
     Ok(tree)
+}
+
+#[tauri::command]
+pub async fn download_default_wiki() -> Result<(), String> {
+    let braid_org = braid_common::braid_org_dir();
+    braid_common::ensure_dir(&braid_org).map_err(|e| e.to_string())?;
+
+    let welcome_path = braid_org.join("Welcome.md");
+    if !welcome_path.exists() {
+        let content = "# Welcome to Braid Wiki\n\nThis is your local copy of the Braid Wiki.\n\n- [Main Page](https://braid.org/Main)\n- [Protocol Specs](https://braid.org/Protocol)";
+        std::fs::write(&welcome_path, content).map_err(|e| e.to_string())?;
+    }
+    
+    // Trigger initial sync for key pages
+    let _ = crate::local_sync::sync_page("https://braid.org/Welcome").await;
+    let _ = crate::local_sync::sync_page("https://braid.org/Main").await;
+
+    Ok(())
 }
 
 fn scan_dir_helper(
@@ -662,6 +975,56 @@ pub async fn get_sync_editor_page(url: String) -> Result<crate::models::SyncEdit
     local_sync::load_page(&url).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn setup_user_storage(
+    username: String,
+    base_path: String,
+    sync_with_braid: bool,
+) -> Result<String, String> {
+    info!("[Storage] Setting up storage for user: {} at base: {}", username, base_path);
+    let root = std::path::PathBuf::from(base_path).join(format!("{}_local_link", username));
+    
+    // 1. Create directory structure
+    braid_common::set_braid_root(root.clone());
+    braid_common::init_structure().map_err(|e| e.to_string())?;
+    
+    // 2. Re-initialize local sync (restarts watcher)
+    crate::local_sync::init(root.clone()).await.map_err(|e| e.to_string())?;
+    
+    // 3. (Optional) Cleanup - We keep legacy braid_sync if it exists to support multi-user machines
+    // 3. Cleanup - Remove legacy braid_sync to avoid confusion
+    let legacy_root = std::path::PathBuf::from("braid_sync");
+    if legacy_root.exists() {
+        info!("[Storage] Removing legacy braid_sync folder");
+        let _ = std::fs::remove_dir_all(&legacy_root);
+    }
+
+    // 4. Seed with default files
+    let braid_org = root.join("braid.org");
+    let welcome_path = braid_org.join("Welcome.md");
+    if !welcome_path.exists() {
+        let _ = std::fs::write(&welcome_path, "# Welcome to Braid\n\nThis is your new isolated storage!\nClick 'Sync Change' to save.");
+    }
+
+    // 5. Initial Sync with Braid Wiki if requested
+    if sync_with_braid {
+        info!("[Storage] Triggering initial Braid.org wiki sync");
+        let _ = crate::local_sync::sync_page("https://braid.org/Welcome").await;
+        let _ = crate::local_sync::sync_page("https://braid.org/Main").await;
+    }
+
+    Ok(root.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn get_default_storage_base() -> Result<String, String> {
+    // Default to user home directory if possible
+    let home = dirs::home_dir()
+        .or_else(|| std::env::current_dir().ok())
+        .ok_or_else(|| "Could not determine home directory".to_string())?;
+    Ok(home.to_string_lossy().to_string())
+}
+
 // Legacy commands (kept for compatibility)
 #[tauri::command]
 pub fn greet(name: &str) -> String {
@@ -677,3 +1040,5 @@ pub async fn signup(email: String, _username: String, _password: String) -> Resu
 pub async fn login(email: String, _password: String) -> Result<String, String> {
     Ok(format!("Logged in: {}", email))
 }
+
+

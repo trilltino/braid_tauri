@@ -1,44 +1,273 @@
 /* Auth Screen */
 .auth-screen {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: radial-gradient(circle at 50% 50%, #1a103c, var(--bg-primary));
-    display: flex; align-items: center; justify-content: center; z-index: 1000;
-    overflow: hidden; transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+    position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: var(--bg-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        overflow: hidden;
+        transition: all 0.5s ease;
 }
 
 .auth-box {
-    background: rgba(20, 24, 38, 0.45); padding: 56px; border-radius: 40px;
-    width: 100%; max-width: 440px; text-align: center; position: relative; z-index: 1001;
-    backdrop-filter: blur(50px) saturate(210%); border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 40px 100px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(255, 255, 255, 0.05);
+    background: var(--bg-primary);
+        padding: 48px;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 400px;
+        text-align: center;
+        position: relative;
+        z-index: 1001;
+        border: none;
+        box-shadow: none;
+        transition: all 0.5s ease;
+    }
+    
+    .auth-logo {
+        display: none;
+    }
+    
+    .auth-toggle {
+        margin-top: 24px;
+        font-size: 14px;
+        color: var(--text-dim);
+    }
+    
+    .auth-toggle a {
+        color: var(--text-main);
+        text-decoration: none;
+        font-weight: 500;
+        margin-left: 6px;
+    }
+    
+    .auth-toggle a:hover {
+        text-decoration: underline;
+    }
+    
+    .auth-preferences {
+        margin-top: 12px;
+        font-size: 13px;
+    }
+    
+    #auth-pref-btn {
+        color: var(--text-muted);
+        text-decoration: none;
+        transition: color 0.2s ease;
+    }
+    
+    #auth-pref-btn:hover {
+        color: var(--text-dim);
+        text-decoration: underline;
+    }
+    
+    .auth-back-btn {
+        background: transparent;
+        border: none;
+        color: var(--text-dim);
+        font-size: 13px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin: 24px auto 0;
+        transition: color 0.2s ease;
+        padding: 8px 16px;
+    }
+    
+    .auth-back-btn:hover {
+        color: var(--text-main);
+    }
+    
+    .auth-back-btn svg {
+        transition: transform 0.2s ease;
+    }
+    
+    .auth-back-btn:hover svg {
+        transform: translateX(-4px);
 }
 
 .auth-logo .orb {
-    width: 100px; height: 100px; border-radius: 50%;
-    background: linear-gradient(135deg, var(--purple-main), var(--purple-light), #ffffff);
-    box-shadow: 0 0 50px var(--accent-glow), inset 0 0 20px rgba(255, 255, 255, 0.5);
-    animation: orbPulse 4s ease-in-out infinite; border: 3px solid rgba(255, 255, 255, 0.2);
+    display: none;
+    }
+    
+    .auth-box h1 {
+        font-size: 36px;
+        margin-bottom: 4px;
+        color: var(--text-main);
+    }
+    
+    .input-group {
+        text-align: left;
+        margin-bottom: 12px;
+    }
+    
+    .input-group label {
+        display: none;
+        font-size: 12px;
+        color: var(--text-main);
+        margin-bottom: 8px;
+        font-weight: 400;
+    }
+    
+    .input-group input {
+        width: 100%;
+        padding: 14px 0;
+        background: transparent !important;
+        border: none !important;
+        border-bottom: 1px solid var(--glass-heavy) !important;
+        border-radius: 0;
+        color: var(--text-main);
+        font-size: 16px;
+        transition: border-color 0.3s ease;
+        -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
+        box-shadow: 0 0 0px 1000px transparent inset !important;
+        -webkit-text-fill-color: var(--text-main) !important;
+    }
+    
+    /* Aggressive Autofill Override - specifically for webview/chrome */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus,
+    input:-webkit-autofill:active {
+        -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
+        -webkit-text-fill-color: var(--text-main) !important;
+        transition: background-color 5000s ease-in-out 0s;
+        background-color: transparent !important;
+    }
+    
+    .input-group input:focus {
+        outline: none;
+        border-bottom-color: var(--text-dim);
+    }
+    
+    .input-group input::placeholder {
+        color: var(--text-muted);
 }
 
-@keyframes orbPulse {
-    0%, 100% { transform: scale(1); filter: brightness(1); }
-    50% { transform: scale(1.05); filter: brightness(1.2); box-shadow: 0 0 70px var(--purple-main); }
+.input-group input:focus {
+    outline: none;
 }
 
-.auth-box h1 { font-size: 36px; margin-bottom: 4px; background: linear-gradient(135deg, #fff 40%, var(--text-dim) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+/* Title Fade In */
+.auth-header-brand {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 1s ease-out;
+}
 
-.input-group { text-align: left; margin-bottom: 20px; }
-.input-group label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
-.input-group input { width: 100%; padding: 14px 18px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border); border-radius: 14px; color: white; }
+.auth-header-brand.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
 
 .auth-submit {
-    margin-top: 24px; padding: 18px; width: 100%; background: linear-gradient(135deg, #00d2ff, var(--accent));
-    border: none; border-radius: 18px; color: white; font-weight: 700; cursor: pointer; transition: var(--transition);
+    margin-top: 24px;
+        padding: 16px;
+        width: 100%;
+        background: var(--text-main);
+        border: none;
+        border-radius: 8px;
+        color: var(--bg-primary);
+        font-weight: 400;
+        font-size: 14px;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .auth-submit:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    }
+    
+    .auth-toggle {
+        margin-top: 32px;
+        font-size: 14px;
+        color: var(--text-dim);
+    }
+    
+    #auth-toggle-btn {
+        color: var(--text-main);
+        font-weight: 400;
+        margin-left: 6px;
+        text-decoration: underline;
+    }
+    
+    .auth-screen.fade-out {
+        opacity: 0;
+        transform: scale(1.05);
+    }
+    
+    /* Avatar Upload UI */
+    .avatar-drop-zone {
+        width: 80px;
+        height: 80px;
+        border: 2px dashed var(--border-bright);
+        border-radius: 50%;
+        margin: 10px auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        overflow: hidden;
+        position: relative;
+        background: var(--glass);
+    }
+    
+    .avatar-drop-zone:hover {
+        border-color: var(--text-main);
+        background: var(--glass-heavy);
+    }
+    
+    .avatar-preview {
+        width: 100%;
+        height: 100%;
+        background-size: cover;
+        background-position: center;
+        display: none;
+    }
+    
+    .avatar-hint {
+        font-size: 10px;
+        color: var(--text-muted);
+        text-align: center;
+        padding: 0 5px;
+    }
+    
+    .avatar-drop-zone.has-image .avatar-hint {
+        display: none;
+    }
+    
+    .avatar-drop-zone.has-image .avatar-preview {
+        display: block;
+    }
+    
+    .avatar-drop-zone.drag-over {
+        border-color: var(--text-main);
+        transform: scale(1.05);
+        background: var(--glass-heavy);
 }
 
-.auth-submit:hover { transform: translateY(-2px); box-shadow: 0 15px 30px rgba(124, 77, 255, 0.4); }
+/* Hide titlebar text during auth */
+.auth-screen-visible #titlebar-text {
+    opacity: 0;
+    pointer-events: none;
+}
 
-.auth-toggle { margin-top: 32px; font-size: 14px; color: var(--text-dim); }
-#auth-toggle-btn { color: var(--accent); font-weight: 600; margin-left: 6px; }
+.auth-screen {
+    opacity: 1;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+}
 
-.auth-screen.fade-out { opacity: 0; transform: scale(1.05); }
+.auth-screen.fade-out {
+    opacity: 0;
+    transform: scale(1.05);
+    pointer-events: none;
+}

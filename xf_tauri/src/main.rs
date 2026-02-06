@@ -33,6 +33,9 @@ fn main() {
     let storage_dir = braid_common::init_structure()
         .expect("Failed to initialize directory structure");
     
+    // Set BRAID_ROOT so all subsequent calls use the absolute path
+    std::env::set_var("BRAID_ROOT", &storage_dir);
+    
     let _ = braid_common::migrate_legacy_paths();
     
     if std::env::var("RUST_LOG").is_err() {
@@ -51,7 +54,7 @@ fn main() {
         let chat_manager = ChatManager::new(chat_server_url)
             .expect("Failed to initialize ChatManager");
         
-        info!("[App] BraidClient initialized - Using PURE BRAID PROTOCOL (NO SSE)");
+        // info!("[App] BraidClient initialized - Using PURE BRAID PROTOCOL (NO SSE)");
 
         // Create Braid app state
         let braid_state = BraidAppState {
@@ -101,16 +104,22 @@ fn main() {
                 commands::get_pending_requests_braid,
                 commands::respond_to_request_braid,
                 commands::get_contacts_braid,
+                commands::get_conversations_braid,
+                commands::create_conversation_braid,
+                commands::create_ai_chat_braid,
                 commands::send_message_braid,
                 commands::get_messages_braid,
                 commands::start_braid_subscription,
                 commands::stop_braid_subscription,
                 commands::sync_drafts_braid,
+                commands::get_sync_status_braid,
                 commands::upload_file_braid,
+                commands::send_message_with_file_braid,
                 
                 // MAIL/FEED COMMANDS
                 commands::subscribe_braid_mail,
                 commands::is_braid_mail_subscribed,
+                commands::set_mail_auth,
                 commands::get_mail_feed,
                 commands::get_mail_feed_braid,
                 commands::send_mail,
@@ -123,6 +132,9 @@ fn main() {
                 commands::set_sync_editor_cookie,
                 commands::add_braid_sync_subscription,
                 commands::get_sync_editor_page,
+                commands::setup_user_storage,
+                commands::get_default_storage_base,
+                commands::download_default_wiki,
             ]);
 
         let app = builder

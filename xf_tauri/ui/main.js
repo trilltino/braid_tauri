@@ -1,5 +1,5 @@
 import { showToast, invoke, listen, setActiveNav } from './apps/shared/utils.js';
-import { setupQuill, setupResizer } from './apps/explorer/editor.js';
+import { setupQuill, setupExplorerResizer } from './apps/explorer/editor.js';
 import { initAuth } from './apps/auth/auth.js';
 import { initFeed, loadMailFeed } from './apps/feed/feed.js';
 import { initExplorer, loadExplorerTree, handleFileClick, saveExplorerFile } from './apps/explorer/explorer.js';
@@ -28,7 +28,8 @@ function setupApp() {
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const viewName = btn.getAttribute('data-view');
-            window.switchView(viewName);
+            const section = btn.getAttribute('data-section');
+            window.switchView(viewName, section);
             setActiveNav(btn);
         });
     });
@@ -39,7 +40,10 @@ function setupApp() {
     initExplorer();
     initChat();
     initAi();
-    setupResizer();
+    setupExplorerResizer();
+
+    // Global UI Logic
+    setupAddFriendOverlay();
 
     // Global Save Helper
     window.debounceSave = () => {
@@ -50,13 +54,90 @@ function setupApp() {
     setupRealtimeListeners();
 }
 
+function setupAddFriendOverlay() {
+    const friendOverlay = document.getElementById('friend-overlay');
+    const friendEmail = document.getElementById('friend-email');
+    const friendMessage = document.getElementById('friend-message');
+    const sendBtn = document.getElementById('friend-send-btn');
+    const closeBtn = document.getElementById('friend-close-btn');
+
+    window.showFriendOverlay = () => {
+        if (friendOverlay) {
+            friendOverlay.style.display = 'flex';
+            if (friendEmail) friendEmail.focus();
+        }
+    };
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            if (friendOverlay) friendOverlay.style.display = 'none';
+        });
+    }
+
+    if (friendOverlay) {
+        friendOverlay.addEventListener('click', (e) => {
+            if (e.target === friendOverlay) friendOverlay.style.display = 'none';
+        });
+    }
+
+    if (sendBtn) {
+        sendBtn.addEventListener('click', async () => {
+            const email = friendEmail?.value?.trim();
+            const msg = friendMessage?.value?.trim();
+
+            if (!email) {
+                showToast("Please enter an email address", "error");
+                return;
+            }
+
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
+
+            try {
+                // Tauri Rust standard uses snake_case for to_email
+                // But JS invoke converts to camelCase by default to map to Rust.
+                // However, we've seen snake_case works in other commands here.
+                // We'll use to_email to match chat.js pattern.
+                await invoke('send_friend_request_braid', { to_email: email, message: msg || null });
+                showToast("Friend request sent!", "success");
+                if (friendOverlay) friendOverlay.style.display = 'none';
+                if (friendEmail) friendEmail.value = '';
+                if (friendMessage) friendMessage.value = '';
+            } catch (err) {
+                showToast("Failed to send request: " + err, "error");
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send Request';
+            }
+        });
+    }
+
+    // Global Triggers
+    const profileBtn = document.getElementById('btn-profile');
+    if (profileBtn) {
+        profileBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.showFriendOverlay();
+        });
+    }
+
+    // Header Trigger
+    const headerAddBtn = document.getElementById('add-contact-header-btn');
+    if (headerAddBtn) {
+        headerAddBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.showFriendOverlay();
+        });
+    }
+}
+
 function onLoginSuccess(user) {
     document.getElementById("auth-container").classList.add('fade-out');
     setTimeout(() => {
         document.getElementById("auth-container").style.display = "none";
         document.querySelector(".app-container").style.display = "flex";
-        window.switchView('chat');
-        setActiveNav(document.getElementById('btn-chat'));
+        window.switchView('mail');
+        setActiveNav(document.getElementById('btn-mail'));
 
         loadConversations();
         loadAiConversations();
@@ -66,8 +147,8 @@ function onLoginSuccess(user) {
     }, 600);
 }
 
-window.switchView = function (viewName) {
-    console.log("Switching to:", viewName);
+window.switchView = function (viewName, section = null) {
+    console.log("Switching to:", viewName, "section:", section);
     Object.values(window.views).forEach(v => { if (v) v.style.display = 'none'; });
     if (window.views[viewName]) {
         window.views[viewName].style.display = 'flex';
@@ -81,6 +162,23 @@ window.switchView = function (viewName) {
         if (viewName === 'chat' || viewName === 'ai') {
             loadConversations();
             loadAiConversations();
+        }
+
+        // Load Explorer tree when switching to explorer view
+        if (viewName === 'explorer') {
+            // Update the explorer title based on section
+            const titleEl = document.querySelector('#explorer-sidebar h1');
+            if (titleEl) {
+                if (section === 'local') {
+                    titleEl.textContent = 'LinkedLocal';
+                } else {
+                    titleEl.textContent = 'Braid Explorer';
+                }
+            }
+            window.currentExplorerSection = section;
+            import('./apps/explorer/explorer.js').then(mod => {
+                if (mod.loadExplorerTree) mod.loadExplorerTree('explorer-tree', section);
+            }).catch(e => console.error("Failed to load explorer:", e));
         }
     }
 };

@@ -20,6 +20,7 @@ pub struct User {
     pub username: String,
     #[serde(skip_serializing)]
     pub password_hash: String,
+    pub avatar_blob_hash: Option<String>,
     pub created_at: DateTime<Utc>,
     pub last_login: Option<DateTime<Utc>>,
     pub is_active: bool,
@@ -31,6 +32,7 @@ pub struct UserInfo {
     pub id: String,
     pub email: String,
     pub username: String,
+    pub avatar_blob_hash: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -40,6 +42,7 @@ impl From<User> for UserInfo {
             id: user.id,
             email: user.email,
             username: user.username,
+            avatar_blob_hash: user.avatar_blob_hash,
             created_at: user.created_at,
         }
     }
@@ -81,11 +84,13 @@ impl AuthManager {
 
     /// Initialize SQLite database
     async fn init_db(&self) -> Result<()> {
-        use sqlx::sqlite::SqlitePoolOptions;
+        use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+        use std::str::FromStr;
         
-        let db_url = format!("sqlite:{}", self.db_path.display());
+        let options = SqliteConnectOptions::from_str(&format!("sqlite:{}", self.db_path.display()))?
+            .create_if_missing(true);
         let pool = SqlitePoolOptions::new()
-            .connect(&db_url)
+            .connect_with(options)
             .await?;
 
         // Create users table
@@ -96,6 +101,7 @@ impl AuthManager {
                 email TEXT UNIQUE NOT NULL,
                 username TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
+                avatar_blob_hash TEXT,
                 created_at TEXT NOT NULL,
                 last_login TEXT,
                 is_active INTEGER DEFAULT 1
@@ -104,6 +110,11 @@ impl AuthManager {
         )
         .execute(&pool)
         .await?;
+
+        // Migration: Add avatar_blob_hash if it doesn't exist
+        let _ = sqlx::query("ALTER TABLE users ADD COLUMN avatar_blob_hash TEXT")
+            .execute(&pool)
+            .await;
 
         // Create sessions table
         sqlx::query(
@@ -126,14 +137,16 @@ impl AuthManager {
 
     /// Get database connection
     async fn get_pool(&self) -> Result<sqlx::SqlitePool> {
-        use sqlx::sqlite::SqlitePoolOptions;
+        use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+        use std::str::FromStr;
         
-        let db_url = format!("sqlite:{}", self.db_path.display());
-        Ok(SqlitePoolOptions::new().connect(&db_url).await?)
+        let options = SqliteConnectOptions::from_str(&format!("sqlite:{}", self.db_path.display()))?
+            .create_if_missing(true);
+        Ok(SqlitePoolOptions::new().connect_with(options).await?)
     }
 
     /// Register a new user
-    pub async fn signup(&self, email: String, username: String, password: String) -> Result<User> {
+    pub async fn signup(&self, email: String, username: String, password: String, avatar_blob_hash: Option<String>) -> Result<User> {
         let pool = self.get_pool().await?;
 
         // Check if email already exists
@@ -156,6 +169,7 @@ impl AuthManager {
             email: email.clone(),
             username: username.clone(),
             password_hash,
+            avatar_blob_hash: avatar_blob_hash.clone(),
             created_at: Utc::now(),
             last_login: None,
             is_active: true,
@@ -163,12 +177,13 @@ impl AuthManager {
 
         // Insert into database
         sqlx::query(
-            "INSERT INTO users (id, email, username, password_hash, created_at, is_active) VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO users (id, email, username, password_hash, avatar_blob_hash, created_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&user.id)
         .bind(&user.email)
         .bind(&user.username)
         .bind(&user.password_hash)
+        .bind(&user.avatar_blob_hash)
         .bind(user.created_at.to_rfc3339())
         .bind(user.is_active)
         .execute(&pool)
@@ -186,14 +201,14 @@ impl AuthManager {
         let pool = self.get_pool().await?;
 
         // Find user by email
-        let row: Option<(String, String, String, String, String)> = sqlx::query_as(
-            "SELECT id, email, username, password_hash, created_at FROM users WHERE email = ? AND is_active = 1"
+        let row: Option<(String, String, String, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT id, email, username, password_hash, avatar_blob_hash, created_at FROM users WHERE email = ? AND is_active = 1"
         )
         .bind(&email)
         .fetch_optional(&pool)
         .await?;
 
-        let (user_id, email, username, password_hash, created_at) = row
+        let (user_id, email, username, password_hash, avatar_blob_hash, created_at) = row
             .ok_or_else(|| anyhow::anyhow!("Invalid email or password"))?;
 
         // Verify password
@@ -220,6 +235,7 @@ impl AuthManager {
             email,
             username,
             password_hash: String::new(), // Don't return hash
+            avatar_blob_hash,
             created_at: created_at.parse().unwrap_or_else(|_| Utc::now()),
             last_login: Some(Utc::now()),
             is_active: true,
@@ -266,19 +282,20 @@ impl AuthManager {
                 if session.expires_at > Utc::now() {
                     // Get user info
                     let pool = self.get_pool().await?;
-                    let row: Option<(String, String, String, String)> = sqlx::query_as(
-                        "SELECT id, email, username, created_at FROM users WHERE id = ?"
+                    let row: Option<(String, String, String, Option<String>, String)> = sqlx::query_as(
+                        "SELECT id, email, username, avatar_blob_hash, created_at FROM users WHERE id = ?"
                     )
                     .bind(&session.user_id)
                     .fetch_optional(&pool)
                     .await?;
                     pool.close().await;
 
-                    if let Some((id, email, username, created_at)) = row {
+                    if let Some((id, email, username, avatar_blob_hash, created_at)) = row {
                         return Ok(UserInfo {
                             id,
                             email,
                             username,
+                            avatar_blob_hash,
                             created_at: created_at.parse().unwrap_or_else(|_| Utc::now()),
                         });
                     }
@@ -289,9 +306,9 @@ impl AuthManager {
         // Check database
         let pool = self.get_pool().await?;
 
-        let row: Option<(String, String, String, String, String)> = sqlx::query_as(
+        let row: Option<(String, String, String, Option<String>, String, String)> = sqlx::query_as(
             r#"
-            SELECT u.id, u.email, u.username, u.created_at, s.expires_at 
+            SELECT u.id, u.email, u.username, u.avatar_blob_hash, u.created_at, s.expires_at 
             FROM users u 
             JOIN sessions s ON u.id = s.user_id 
             WHERE s.token = ?
@@ -303,13 +320,14 @@ impl AuthManager {
 
         pool.close().await;
 
-        if let Some((id, email, username, created_at, expires_at)) = row {
+        if let Some((id, email, username, avatar_blob_hash, created_at, expires_at)) = row {
             let expires: DateTime<Utc> = expires_at.parse().map_err(|_| anyhow::anyhow!("Invalid date"))?;
             if expires > Utc::now() {
                 return Ok(UserInfo {
                     id,
                     email,
                     username,
+                    avatar_blob_hash,
                     created_at: created_at.parse().unwrap_or_else(|_| Utc::now()),
                 });
             }
@@ -340,8 +358,8 @@ impl AuthManager {
     pub async fn get_user(&self, user_id: &str) -> Result<UserInfo> {
         let pool = self.get_pool().await?;
 
-        let row: Option<(String, String, String, String)> = sqlx::query_as(
-            "SELECT id, email, username, created_at FROM users WHERE id = ?"
+        let row: Option<(String, String, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT id, email, username, avatar_blob_hash, created_at FROM users WHERE id = ?"
         )
         .bind(user_id)
         .fetch_optional(&pool)
@@ -349,11 +367,12 @@ impl AuthManager {
 
         pool.close().await;
 
-        if let Some((id, email, username, created_at)) = row {
+        if let Some((id, email, username, avatar_blob_hash, created_at)) = row {
             Ok(UserInfo {
                 id,
                 email,
                 username,
+                avatar_blob_hash,
                 created_at: created_at.parse().unwrap_or_else(|_| Utc::now()),
             })
         } else {
@@ -365,8 +384,8 @@ impl AuthManager {
     pub async fn list_users(&self) -> Result<Vec<UserInfo>> {
         let pool = self.get_pool().await?;
 
-        let rows: Vec<(String, String, String, String)> = sqlx::query_as(
-            "SELECT id, email, username, created_at FROM users WHERE is_active = 1"
+        let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT id, email, username, avatar_blob_hash, created_at FROM users WHERE is_active = 1"
         )
         .fetch_all(&pool)
         .await?;
@@ -375,12 +394,87 @@ impl AuthManager {
 
         Ok(rows
             .into_iter()
-            .map(|(id, email, username, created_at)| UserInfo {
+            .map(|(id, email, username, avatar_blob_hash, created_at)| UserInfo {
                 id,
                 email,
                 username,
+                avatar_blob_hash,
                 created_at: created_at.parse().unwrap_or_else(|_| Utc::now()),
             })
             .collect())
+    }
+
+    /// Update user profile
+    pub async fn update_user(
+        &self, 
+        user_id: &str, 
+        username: Option<String>, 
+        email: Option<String>, 
+        password: Option<String>,
+        avatar_blob_hash: Option<String>
+    ) -> Result<UserInfo> {
+        let pool = self.get_pool().await?;
+
+        if let Some(username) = username {
+            sqlx::query("UPDATE users SET username = ? WHERE id = ?")
+                .bind(username)
+                .bind(user_id)
+                .execute(&pool)
+                .await?;
+        }
+
+        if let Some(email) = email {
+            // Check if email already exists for another user
+            let existing: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE email = ? AND id != ?")
+                .bind(&email)
+                .bind(user_id)
+                .fetch_optional(&pool)
+                .await?;
+
+            if existing.is_some() {
+                return Err(anyhow::anyhow!("Email already in use"));
+            }
+
+            sqlx::query("UPDATE users SET email = ? WHERE id = ?")
+                .bind(email)
+                .bind(user_id)
+                .execute(&pool)
+                .await?;
+        }
+
+        if let Some(password) = password {
+            let password_hash = hash(&password, DEFAULT_COST)
+                .context("Failed to hash password")?;
+                
+            sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+                .bind(password_hash)
+                .bind(user_id)
+                .execute(&pool)
+                .await?;
+        }
+
+        if let Some(avatar) = avatar_blob_hash {
+            sqlx::query("UPDATE users SET avatar_blob_hash = ? WHERE id = ?")
+                .bind(avatar)
+                .bind(user_id)
+                .execute(&pool)
+                .await?;
+        }
+
+        let user = self.get_user(user_id).await?;
+        pool.close().await;
+        Ok(user)
+    }
+
+    /// Set user avatar
+    pub async fn set_avatar(&self, user_id: &str, avatar_hash: String) -> Result<()> {
+        let pool = self.get_pool().await?;
+        sqlx::query("UPDATE users SET avatar_blob_hash = ? WHERE id = ?")
+            .bind(avatar_hash)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
+        pool.close().await;
+        Ok(())
     }
 }

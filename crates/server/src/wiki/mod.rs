@@ -132,7 +132,7 @@ impl WikiManager {
                 info!("[WikiManager] Fetching and projecting: {}", url);
 
                 // Fetch with Simpleton support and Markdown extraction
-                let mut req = BraidRequest::new().with_merge_type("simpleton");
+                let req = BraidRequest::new().with_merge_type("simpleton");
 
                 match client.fetch(url, req).await {
                     Ok(resp) => {

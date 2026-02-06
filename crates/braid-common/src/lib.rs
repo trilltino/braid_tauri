@@ -20,6 +20,12 @@ pub fn braid_root() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("braid_sync"))
 }
 
+/// Set the BRAID_ROOT directory at runtime
+pub fn set_braid_root(path: PathBuf) {
+    info!("Setting BRAID_ROOT to: {:?}", path);
+    std::env::set_var("BRAID_ROOT", path);
+}
+
 /// Local data directory (SQLite, config)
 pub fn local_dir() -> PathBuf {
     braid_root().join("local")

@@ -126,6 +126,17 @@ impl JsonChatStore {
         Ok(())
     }
 
+    /// Get all loading rooms
+    pub async fn list_rooms(&self) -> Vec<ChatRoom> {
+        let rooms_map = self.rooms.read().await;
+        let mut result = Vec::with_capacity(rooms_map.len());
+        for room_lock in rooms_map.values() {
+            let room_data = room_lock.read().await;
+            result.push(room_data.room.clone());
+        }
+        result
+    }
+
     /// Load a single room from disk with CRDT state
     async fn load_room_from_disk(
         &self,
@@ -352,6 +363,76 @@ impl JsonChatStore {
         }
 
         Ok(messages)
+    }
+
+    /// Get messages that are descendants of the given parents (for catch-up sync)
+    /// Based on xfmail's get_messages_since_parents - returns messages newer than parents
+    pub async fn get_messages_since_parents(
+        &self,
+        room_id: &str,
+        parents: &[String],
+        limit: usize,
+    ) -> Result<Vec<Message>> {
+        if parents.is_empty() {
+            return self.get_messages(room_id, None).await;
+        }
+
+        let room_lock = self.get_room(room_id).await?.context("Room not found")?;
+        let room_data = room_lock.read().await;
+
+        // Find all messages that are descendants of the given parents
+        // We need to traverse the version graph to find all descendants
+        let mut result = Vec::new();
+        let mut visited: HashMap<String, bool> = HashMap::new();
+        let mut to_process: Vec<String> = parents.to_vec();
+
+        // Mark parents as visited (we want their children, not the parents themselves)
+        for parent in parents {
+            visited.insert(parent.clone(), true);
+        }
+
+        // BFS through version graph to find all descendants
+        while let Some(version) = to_process.pop() {
+            // Find all versions that have this version as a parent
+            for (child_version, child_parents) in &room_data.crdt.version_graph {
+                if child_parents.contains_key(&version) && !visited.contains_key(child_version) {
+                    visited.insert(child_version.clone(), true);
+                    to_process.push(child_version.clone());
+                    
+                    // Add to result if it's a message
+                    if let Some(msg) = room_data.crdt.messages.get(child_version) {
+                        if !msg.deleted {
+                            result.push(msg.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort by timestamp for consistent ordering
+        result.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        
+        // Apply limit
+        if result.len() > limit {
+            result.truncate(limit);
+        }
+
+        tracing::info!(
+            "[CatchUpSync] Found {} messages since parents {:?} in room {}",
+            result.len(),
+            parents,
+            room_id
+        );
+
+        Ok(result)
+    }
+
+    /// Get the current conversation tips (frontier versions)
+    /// These are the "leaf" versions in the DAG that have no children yet
+    pub async fn get_conversation_tips(&self, room_id: &str) -> Result<Vec<String>> {
+        let room_lock = self.get_room(room_id).await?.context("Room not found")?;
+        let room_data = room_lock.read().await;
+        Ok(room_data.crdt.get_frontier())
     }
 
     /// Get a single message by ID

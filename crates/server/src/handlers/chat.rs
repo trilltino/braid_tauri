@@ -6,7 +6,7 @@
 use crate::{
     models::{
         ChatSnapshot, CreateMessageInput, MessageType, MessageTypeInput,
-        BlobRef, RoomSyncStatus, SyncStatus,
+        BlobRef, RoomSyncStatus, SyncStatus, ChatRoom,
     },
     config::AppState,
 };
@@ -302,6 +302,16 @@ pub async fn get_room_status(
     };
 
     Ok(Json(status))
+}
+
+/// GET /chat/rooms
+/// 
+/// List all chat rooms.
+pub async fn list_rooms(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ChatRoom>>, StatusCode> {
+    let rooms = state.store.list_rooms().await;
+    Ok(Json(rooms))
 }
 
 /// POST /chat/:room_id/drafts

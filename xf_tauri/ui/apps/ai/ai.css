@@ -1,48 +1,86 @@
 /* AI Specific Styles */
+\r\n\r\n
+
+/* AI View Purple Gradient Background */
+\r\n.ai-gradient-bg {
+    \r\n background: linear-gradient(135deg, #1a0a2e 0%, #4a148c 30%, #7b1fa2 60%, #9c27b0 100%);
+    \r\n background-size: 400% 400%;
+    \r\n animation: aiGradientShift 15s ease infinite;
+    \r\n
+}
+
+\r\n\r\n@keyframes aiGradientShift {
+    \r\n 0% {
+        background-position: 0% 50%;
+    }
+
+    \r\n 50% {
+        background-position: 100% 50%;
+    }
+
+    \r\n 100% {
+        background-position: 0% 50%;
+    }
+
+    \r\n
+}
+
+\r\n
 .chat-bubble.ai {
     background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2); color: #fff;
-    box-shadow: 0 0 20px rgba(157, 80, 187, 0.2); border-left: 5px solid var(--purple-main);
+    border: none;
+        color: #fff;
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+        box-shadow: inset 5px 0 0 var(--text-main);
     animation: aiPulse 2s infinite alternate;
 }
 
 .chat-bubble.ai.thinking {
-    background: rgba(157, 80, 187, 0.15);
-    border-left-color: #ff9800;
+    background: rgba(255, 255, 255, 0.05);
+        box-shadow: inset 5px 0 0 var(--text-dim);
     animation: thinkingPulse 1.5s infinite alternate;
 }
 
 .chat-bubble.ai.thinking .message-content {
-    font-style: italic;
-    color: rgba(255, 255, 255, 0.7);
+    font-style: normal;
+        color: var(--text-dim);
 }
 
 @keyframes aiPulse {
-    from { box-shadow: 0 0 10px rgba(157, 80, 187, 0.1); }
-    to { box-shadow: 0 0 25px rgba(157, 80, 187, 0.3); }
+    from {
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.05);
+        }
+    
+        to {
+            box-shadow: 0 0 25px rgba(255, 255, 255, 0.15);
+        }
 }
 
 @keyframes thinkingPulse {
     from { 
-        box-shadow: 0 0 10px rgba(255, 152, 0, 0.2);
-        border-left-color: #ff9800;
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.05);
+            border-left-color: var(--text-dim);
     }
     to { 
-        box-shadow: 0 0 20px rgba(255, 152, 0, 0.4);
-        border-left-color: #ffc107;
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+            border-left-color: var(--text-main);
     }
 }
 
 .ai-avatar {
-    background: linear-gradient(135deg, #1a1b26, #2d2a37);
-    border: 1px solid var(--purple-main) !important;
+    background: linear-gradient(135deg, #181818, #2a2a2a);
+        border: none !important;
     position: relative;
     display: flex; align-items: center; justify-content: center;
 }
 
 .ai-avatar::before {
-    content: ''; width: 12px; height: 12px; background: var(--purple-main);
-    border-radius: 50%; box-shadow: 0 0 10px var(--purple-main);
+    content: '';
+        width: 12px;
+        height: 12px;
+        background: var(--text-main);
+        border-radius: 50%;
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
 }
 
 /* Thinking dots animation */

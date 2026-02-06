@@ -1,8 +1,8 @@
 use crate::core::{protocol_mod as protocol, BraidError, Result};
 use crate::fs::state::DaemonState;
+use crate::fs::PEER_ID;
 use braid_http::types::{BraidRequest, Version as BraidVersion};
 use std::path::PathBuf;
-use std::process::Command;
 use tracing::{error, info};
 
 /// Logic for syncing a local file to a remote Braid URL.
@@ -18,115 +18,17 @@ pub async fn sync_local_to_remote(
     let url_str = url_in.trim_matches('"').trim().to_string();
     info!("[BraidFS] Syncing {} to remote...", url_str);
 
-    // 1. Special case for braid.org using subprocess curl for max compatibility
-    // This bypasses history-related 309 Conflicts for Braid Wiki resources.
-    if url_str.contains("braid.org") {
-        let mut cookie_str = String::new();
-        let mut parents_header = String::new();
-
-        if let Ok(u) = url::Url::parse(&url_str) {
-            if let Some(domain) = u.domain() {
-                // 1. Fetch Auth
-                let cfg = state.config.read().await;
-                if let Some(token) = cfg.cookies.get(domain) {
-                    cookie_str = if token.contains('=') {
-                        token.clone()
-                    } else {
-                        format!("client={}", token)
-                    };
-                }
-            }
-        }
-
-        // 2. Proactively fetch latest version (Parents) to avoid 309 Conflict
-        let mut head_req = BraidRequest::new().with_method("GET");
-        if !cookie_str.is_empty() {
-            head_req = head_req.with_header("Cookie", cookie_str.clone());
-        }
-
-        if let Ok(res) = state.client.fetch(&url_str, head_req).await {
-            if let Some(v_header) = res.header("version").or(res.header("current-version")) {
-                parents_header = v_header.to_string();
-                info!("[BraidFS] Found parents for braid.org: {}", parents_header);
-            }
-        }
-
-        let mut curl_cmd = Command::new("curl.exe");
-        curl_cmd
-            .arg("-i")
-            .arg("-s")
-            .arg("-X")
-            .arg("PUT")
-            .arg(&url_str);
-
-        if !cookie_str.is_empty() {
-            curl_cmd.arg("-H").arg(format!("Cookie: {}", cookie_str));
-        }
-
-        if !parents_header.is_empty() {
-            curl_cmd
-                .arg("-H")
-                .arg(format!("Parents: {}", parents_header));
-        }
-
-        let output = curl_cmd
-            .arg("-H")
-            .arg("Accept: */*")
-            .arg("-H")
-            .arg("User-Agent: curl/8.0.1")
-            .arg("-d")
-            .arg(&new_content)
-            .output();
-
-        match output {
-            Ok(out) => {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                let stderr = String::from_utf8_lossy(&out.stderr);
-
-                if stdout.contains("200 OK")
-                    || stdout.contains("209 Subscription")
-                    || stdout.contains("204 No Content")
-                    || stdout.contains("201 Created")
-                {
-                    state.failed_syncs.write().await.remove(&url_str);
-                    info!("[BraidFS] Sync success (curl) for {}", url_str);
-                    state
-                        .content_cache
-                        .write()
-                        .await
-                        .insert(url_str.clone(), new_content.clone());
-                    return Ok(());
-                } else {
-                    let status_line = stdout.lines().next().unwrap_or("Unknown").to_string();
-                    let status_code = if status_line.contains("309") {
-                        309
-                    } else {
-                        500
-                    };
-                    let err_msg = format!(
-                        "Sync failed (curl). Status: {}. Stderr: {}",
-                        status_line, stderr
-                    );
-                    error!("[BraidFS] {}", err_msg);
-                    state
-                        .failed_syncs
-                        .write()
-                        .await
-                        .insert(url_str.clone(), (status_code, std::time::Instant::now()));
-                    return Err(BraidError::Http(err_msg));
-                }
-            }
-            Err(e) => {
-                error!("[BraidFS] Failed to spawn curl: {}", e);
-                return Err(BraidError::Io(e));
-            }
-        }
-    }
+    // All URLs now use native Braid HTTP client (removed curl workaround)
+    // The native client handles Windows properly without PowerShell quote issues
 
     // 2. Standard Braid Protocol Path
     let mut request = BraidRequest::new().with_method("PUT");
     let mut effective_parents = parents.to_vec();
 
+    // Fetch server content first to check for conflicts (LWW check)
+    let mut server_content: Option<String> = None;
+    let mut server_version: Option<String> = None;
+    
     if effective_parents.is_empty() {
         let mut head_req = BraidRequest::new()
             .with_method("GET")
@@ -138,6 +40,8 @@ pub async fn sync_local_to_remote(
                 if let Some(token) = cfg.cookies.get(domain) {
                     let cookie_str = if token.contains('=') {
                         token.clone()
+                    } else if domain.contains("braid.org") {
+                        format!("client={}", token)
                     } else {
                         format!("token={}", token)
                     };
@@ -147,6 +51,15 @@ pub async fn sync_local_to_remote(
         }
 
         if let Ok(res) = state.client.fetch(&url_str, head_req).await {
+            // Check server content vs local (LWW: if server differs, accept server)
+            if !res.body.is_empty() {
+                let server_body = String::from_utf8_lossy(&res.body).to_string();
+                if server_body != new_content {
+                    info!("[BraidFS-Sync] Server content differs from local - accepting server (LWW)");
+                    server_content = Some(server_body);
+                }
+            }
+            
             if let Some(v_header) = res
                 .headers
                 .get("version")
@@ -160,15 +73,77 @@ pub async fn sync_local_to_remote(
                         };
                         let normalized = v_str.trim_matches('"').to_string();
                         if !normalized.is_empty() {
-                            effective_parents.push(normalized);
+                            effective_parents.push(normalized.clone());
+                            server_version = Some(normalized);
                         }
                     }
                 }
             }
         }
     }
+    
+    // If server has different content, update local file instead of pushing
+    if let Some(server_body) = server_content {
+        info!("[BraidFS-Sync] Updating local file with server content (server is newer/different)");
+        
+        // Update content cache
+        {
+            let mut cache = state.content_cache.write().await;
+            cache.insert(url_str.clone(), server_body.clone());
+        }
+        
+        // Update version store
+        if let Some(ref sv) = server_version {
+            let mut store = state.version_store.write().await;
+            use braid_http::types::Version;
+            store.update(&url_str, vec![Version::from(sv.clone())], vec![]);
+            let _ = store.save().await;
+        }
+        
+        // Write to file
+        if let Ok(path) = crate::fs::mapping::url_to_path(&url_str) {
+            state.pending.add(path.clone());
+            let tmp_path = path.with_extension("tmp");
+            if tokio::fs::write(&tmp_path, &server_body).await.is_ok() {
+                let _ = tokio::fs::rename(&tmp_path, &path).await;
+                info!("[BraidFS-Sync] Local file updated with server content");
+            }
+        }
+        
+        return Ok(()); // Don't push - we accepted server content
+    }
 
-    if !effective_parents.is_empty() {
+    // Generate a new Version ID for this edit
+    // For braid.org, always use timestamp-based version to avoid CRDT conflicts
+    let new_version = if url_str.contains("braid.org") {
+        let peer_id = PEER_ID.read().await.clone();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        format!("{}-{}", peer_id, ts)
+    } else {
+        let mut merges = state.active_merges.write().await;
+        let peer_id = PEER_ID.read().await.clone();
+        let merge = merges.entry(url_str.clone()).or_insert_with(|| {
+            let mut m = state
+                .merge_registry
+                .create("simpleton", &peer_id)
+                .expect("Failed to create simpleton merge type");
+            m.initialize("");
+            m
+        });
+
+        let patch = crate::core::merge::MergePatch::new("everything", serde_json::Value::String(new_content.clone()));
+        let res = merge.local_edit(patch);
+        res.version.unwrap_or_else(|| format!("{}-{}", peer_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()))
+    };
+
+    request = request.with_version(BraidVersion::new(&new_version));
+    info!("[BraidFS-Sync] Using version: {}", new_version);
+
+    // For braid.org, omit Parents header to avoid 309 conflicts
+    if !url_str.contains("braid.org") && !effective_parents.is_empty() {
         let filtered_parents: Vec<BraidVersion> = effective_parents
             .iter()
             .filter(|p| !p.starts_with("temp-") && !p.starts_with("missing-"))
@@ -190,6 +165,8 @@ pub async fn sync_local_to_remote(
             if let Some(token) = cfg.cookies.get(domain) {
                 let cookie_str = if token.contains('=') {
                     token.clone()
+                } else if domain.contains("braid.org") {
+                    format!("client={}", token)
                 } else {
                     format!("token={}", token)
                 };
@@ -198,8 +175,10 @@ pub async fn sync_local_to_remote(
         }
     }
 
+    info!("[BraidFS-Sync] Sending PUT with {} bytes body", new_content.len());
     let status = match state.client.fetch(&url_str, final_request).await {
         Ok(res) => {
+            info!("[BraidFS-Sync] PUT response status: {}", res.status);
             if (200..300).contains(&res.status) {
                 state.failed_syncs.write().await.remove(&url_str);
                 info!("[BraidFS] Sync success (braid) status: {}", res.status);
@@ -207,7 +186,19 @@ pub async fn sync_local_to_remote(
                     .content_cache
                     .write()
                     .await
-                    .insert(url_str.clone(), new_content);
+                    .insert(url_str.clone(), new_content.clone());
+                
+                // Update version store with the new version
+                {
+                    let mut store = state.version_store.write().await;
+                    use braid_http::types::Version;
+                    store.update(&url_str, vec![Version::from(new_version.clone())], effective_parents.iter().map(|v| Version::from(v.clone())).collect());
+                    match store.save().await {
+                        Ok(_) => info!("[BraidFS-Sync] Updated version store to: {}", new_version),
+                        Err(e) => error!("[BraidFS-Sync] Failed to save version store: {}", e),
+                    }
+                }
+                
                 return Ok(());
             }
             res.status
@@ -239,91 +230,89 @@ pub async fn sync_binary_to_remote(
     let url_str = url_in.trim_matches('"').trim().to_string();
     info!("[BraidFS] Syncing binary {} to remote...", url_str);
 
-    // 1. Proactively fetch latest version (Parents) to avoid 309 Conflict if not provided
-    let mut parents_header = String::new();
-    if parents.is_empty() {
+    // Build native Braid PUT request
+    let mut request = BraidRequest::new()
+        .with_method("PUT")
+        .with_body(data.to_vec());
+
+    // Get parents if not provided
+    let mut effective_parents = parents.to_vec();
+    if effective_parents.is_empty() {
         let head_req = BraidRequest::new().with_method("GET");
         if let Ok(res) = state.client.fetch(&url_str, head_req).await {
             if let Some(v_header) = res.header("version").or(res.header("current-version")) {
-                parents_header = v_header.to_string();
+                if let Ok(versions) = protocol::parse_version_header(v_header) {
+                    for v in versions {
+                        let v_str = match v {
+                            BraidVersion::String(s) => s,
+                            BraidVersion::Integer(i) => i.to_string(),
+                        };
+                        let normalized = v_str.trim_matches('"').to_string();
+                        if !normalized.is_empty() {
+                            effective_parents.push(normalized);
+                        }
+                    }
+                }
             }
         }
-    } else {
-        // Simple join for now, protocol::format_version_header could be used but it's likely single parent usually
-        parents_header = format!("\"{}\"", parents.join("\", \""));
     }
 
-    // 2. Determine auth
-    let mut cookie_str = String::new();
+    // Generate version
+    let new_version = format!("{}-{}", 
+        PEER_ID.read().await.clone(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()
+    );
+    request = request.with_version(BraidVersion::new(&new_version));
+
+    // Add parents
+    if !effective_parents.is_empty() {
+        let filtered_parents: Vec<BraidVersion> = effective_parents
+            .iter()
+            .filter(|p| !p.starts_with("temp-") && !p.starts_with("missing-"))
+            .map(|p| BraidVersion::new(p))
+            .collect();
+        if !filtered_parents.is_empty() {
+            request = request.with_parents(filtered_parents);
+        }
+    }
+
+    // Content type
+    let ct = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+    request = request.with_content_type(ct);
+
+    // Auth
+    let mut final_request = request;
     if let Ok(u) = url::Url::parse(&url_str) {
         if let Some(domain) = u.domain() {
             let cfg = state.config.read().await;
             if let Some(token) = cfg.cookies.get(domain) {
-                cookie_str = if token.contains('=') {
+                let cookie_str = if token.contains('=') {
                     token.clone()
-                } else {
+                } else if domain.contains("braid.org") {
                     format!("client={}", token)
+                } else {
+                    format!("token={}", token)
                 };
+                final_request = final_request.with_header("Cookie", cookie_str);
             }
         }
     }
 
-    // 3. Perform PUT using curl for maximum compatibility with braid.org
-    let mut curl_cmd = Command::new("curl.exe");
-    curl_cmd
-        .arg("-i")
-        .arg("-s")
-        .arg("-X")
-        .arg("PUT")
-        .arg(&url_str);
-
-    if !cookie_str.is_empty() {
-        curl_cmd.arg("-H").arg(format!("Cookie: {}", cookie_str));
-    }
-
-    if !parents_header.is_empty() {
-        curl_cmd
-            .arg("-H")
-            .arg(format!("Parents: {}", parents_header));
-    }
-
-    let ct = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
-    curl_cmd.arg("-H").arg(format!("Content-Type: {}", ct));
-
-    // For binary, we'll pipe the data to curl
-    use std::io::Write;
-    let mut child = curl_cmd
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| BraidError::Io(e))?;
-
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| BraidError::Fs("Failed to open stdin for curl".to_string()))?;
-    stdin.write_all(&data).map_err(|e| BraidError::Io(e))?;
-    drop(stdin);
-
-    let out = child.wait_with_output().map_err(|e| BraidError::Io(e))?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-
-    if stdout.contains("200 OK")
-        || stdout.contains("209 Subscription")
-        || stdout.contains("204 No Content")
-        || stdout.contains("201 Created")
-    {
-        info!("[BraidFS] Binary sync success (curl) for {}", url_str);
-        return Ok(());
-    } else {
-        let status_line = stdout.lines().next().unwrap_or("Unknown").to_string();
-        let err_msg = format!(
-            "Binary sync failed (curl). Status: {}. Stderr: {}",
-            status_line, stderr
-        );
-        error!("[BraidFS] {}", err_msg);
-        return Err(BraidError::Http(err_msg));
+    // Execute PUT
+    match state.client.fetch(&url_str, final_request).await {
+        Ok(res) => {
+            if (200..300).contains(&res.status) {
+                info!("[BraidFS] Binary sync success (braid) status: {}", res.status);
+                Ok(())
+            } else {
+                let err_msg = format!("Binary sync failed: HTTP {}", res.status);
+                error!("[BraidFS] {}", err_msg);
+                Err(BraidError::Http(err_msg))
+            }
+        }
+        Err(e) => {
+            error!("[BraidFS] Binary sync error: {}", e);
+            Err(BraidError::Http(format!("Binary sync error: {}", e)))
+        }
     }
 }

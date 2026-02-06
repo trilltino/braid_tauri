@@ -2,7 +2,7 @@
 
 use super::resource_state::ResourceStateManager;
 use crate::core::protocol_mod as protocol;
-use crate::core::protocol_mod::{self, constants::headers};
+use crate::core::protocol_mod::constants::headers;
 use crate::core::Version;
 use axum::{extract::Request, middleware::Next, response::Response};
 use futures::StreamExt;

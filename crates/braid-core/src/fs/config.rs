@@ -25,7 +25,7 @@ pub struct Config {
 }
 
 fn default_debounce_ms() -> u64 {
-    100
+    10  // Live sync: 10ms debounce for near-instant collaboration
 }
 
 fn default_port() -> u16 {

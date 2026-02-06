@@ -2,8 +2,9 @@
 
 use crate::config::AppState;
 use axum::{
-    extract::State,
+    extract::{State, Path},
     http::StatusCode,
+    response::IntoResponse,
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,7 @@ pub struct SignupRequest {
     pub email: String,
     pub username: String,
     pub password: String,
+    pub avatar_blob_hash: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +36,7 @@ pub struct UserInfo {
     pub id: String,
     pub email: String,
     pub username: String,
+    pub avatar_blob_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -48,7 +51,7 @@ pub async fn signup(
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
     info!("POST /auth/signup - {}", req.email);
     
-    match state.auth.signup(req.email.clone(), req.username.clone(), req.password.clone()).await {
+    match state.auth.signup(req.email.clone(), req.username.clone(), req.password.clone(), req.avatar_blob_hash).await {
         Ok(user) => {
             // Create session
             match state.auth.login(req.email.clone(), req.password.clone()).await {
@@ -123,11 +126,56 @@ pub async fn me(
 }
 
 /// GET /users
-pub async fn list_users(
-    State(_state): State<AppState>,
-) -> Result<Json<Vec<UserInfo>>, StatusCode> {
-    info!("GET /users");
-    // Return list of users
-    let users = vec![];
-    Ok(Json(users))
-}
+    pub async fn list_users(
+        State(state): State<AppState>,
+    ) -> Result<Json<Vec<UserInfo>>, StatusCode> {
+        info!("GET /users");
+        match state.auth.list_users().await {
+            Ok(users) => {
+                let info = users.into_iter().map(|u| UserInfo {
+                    id: u.id,
+                    email: u.email,
+                    username: u.username,
+                    avatar_blob_hash: u.avatar_blob_hash,
+                }).collect();
+                Ok(Json(info))
+            },
+            Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        }
+    }
+    
+    #[derive(Debug, Deserialize)]
+    pub struct UpdateProfileRequest {
+        pub username: Option<String>,
+        pub email: Option<String>,
+        pub password: Option<String>,
+        pub avatar_blob_hash: Option<String>,
+    }
+    
+    /// PUT /auth/profile
+    pub async fn update_profile(
+        State(state): State<AppState>,
+        // In a real app, extract user_id from token
+        Path(user_id): Path<String>,
+        Json(req): Json<UpdateProfileRequest>,
+    ) -> Result<Json<UserInfo>, (StatusCode, Json<ErrorResponse>)> {
+        info!("PUT /auth/profile - {}", user_id);
+        
+        match state.auth.update_user(
+            &user_id, 
+            req.username, 
+            req.email, 
+            req.password, 
+            req.avatar_blob_hash
+        ).await {
+            Ok(user) => Ok(Json(UserInfo {
+                id: user.id,
+                email: user.email,
+                username: user.username,
+                avatar_blob_hash: user.avatar_blob_hash,
+            })),
+            Err(e) => Err((StatusCode::BAD_REQUEST, Json(ErrorResponse {
+                error: e.to_string(),
+            }))),
+        }
+    }

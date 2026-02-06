@@ -1,6 +1,5 @@
 use crate::fs::mapping;
 use crate::fs::state::{Command, DaemonState};
-use crate::fs::sync::sync_local_to_remote;
 use notify::Event;
 
 pub async fn handle_fs_event(event: Event, state: DaemonState) {

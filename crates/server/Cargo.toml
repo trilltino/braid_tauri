@@ -35,7 +35,7 @@ parking_lot = "0.12"
 sha2 = "0.10"
 
 # Auth
-bcrypt = "0.16"
+bcrypt = "0.18.0"
 sqlx = { version = "0.8", features = [
     "sqlite",
     "runtime-tokio",
@@ -60,7 +60,7 @@ http = "1.0"
 headers = "0.4"
 
 # File watching for daemon integration
-notify = "7.0"
+notify = "8.2.0"
 
 # Async traits
 async-trait = "0.1"
