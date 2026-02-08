@@ -52,7 +52,7 @@ impl<T: MergableSpan> AppendRle<T> for Vec<T> {
 }
 
 #[cfg(feature = "smallvec")]
-impl<T, const N: usize> AppendRle<T> for SmallVec<T, N> where T: MergableSpan {
+impl<T, const N: usize> AppendRle<T> for SmallVec<[T; N]> where T: MergableSpan {
     fn push_rle(&mut self, item: T) -> bool {
         // debug_assert!(item.len() > 0);
 

@@ -1,13 +1,13 @@
 [package]
-name = "server"
+name = "local_link_server"
 version = "0.2.0"
 edition = "2021"
 authors = ["Braid Team"]
 license = "MIT OR Apache-2.0"
-description = "Braid Chat Server with Auth, JSON storage, CRDT sync, and daemon integration"
+description = "LocalLink Chat Server with Auth, JSON storage, CRDT sync, and daemon integration"
 
 [[bin]]
-name = "server"
+name = "local_link_server"
 path = "src/main.rs"
 
 [dependencies]
@@ -50,7 +50,7 @@ reqwest = { version = "0.13.1", features = ["json"] }
 genai = "0.5.2"
 
 # Braid protocol support - using workspace crates
-braid-core = { path = "../braid-core", features = ["server", "antimatter"] }
+braid-core = { path = "../braid-core" }
 braid-common = { path = "../braid-common" }
 braid-http = { path = "../braid-http" }
 braid-blob = { path = "../braid-blob" }

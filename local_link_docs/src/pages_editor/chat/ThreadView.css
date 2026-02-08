@@ -1,0 +1,321 @@
+/* ThreadView Styles */
+
+.thread-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Thread node */
+.thread-node {
+  display: flex;
+  position: relative;
+}
+
+.thread-connector {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.thread-line {
+  width: 2px;
+  background: linear-gradient(to bottom, #ddd, transparent);
+  height: 100%;
+}
+
+.thread-content {
+  flex: 1;
+  margin-left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Depth-based indentation */
+.thread-node.depth-0 > .thread-content {
+  margin-left: 0;
+}
+
+.thread-node.depth-1 > .thread-content {
+  margin-left: 16px;
+}
+
+.thread-node.depth-2 > .thread-content {
+  margin-left: 32px;
+}
+
+.thread-node.depth-3 > .thread-content {
+  margin-left: 48px;
+}
+
+.thread-node.depth-4 > .thread-content {
+  margin-left: 56px;
+}
+
+.thread-node.depth-5 > .thread-content {
+  margin-left: 64px;
+}
+
+/* Reply count badge */
+.reply-count-badge {
+  align-self: flex-start;
+  padding: 4px 12px;
+  background: #f0f0f0;
+  border: none;
+  border-radius: 12px;
+  font-size: 0.8em;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.reply-count-badge:hover {
+  background: #e0e0e0;
+}
+
+.reply-count-badge.collapsed {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+/* Inline reply form */
+.inline-reply-form {
+  margin: 8px 0;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 3px solid #4a90d9;
+}
+
+.inline-reply-form textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 0.95em;
+  margin-bottom: 8px;
+}
+
+.inline-reply-form textarea:focus {
+  outline: none;
+  border-color: #4a90d9;
+}
+
+.reply-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.reply-actions button {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
+.reply-actions button:first-child {
+  background: #4a90d9;
+  color: white;
+}
+
+.reply-actions button:last-child {
+  background: #e0e0e0;
+  color: #666;
+}
+
+/* Thread children */
+.thread-children {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.thread-children.thread-deep {
+  padding-left: 12px;
+}
+
+/* Deep thread notice */
+.deep-thread-notice {
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.deep-thread-notice button {
+  background: none;
+  border: none;
+  color: #4a90d9;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
+.deep-thread-notice button:hover {
+  text-decoration: underline;
+}
+
+/* Flat view */
+.thread-view.flat {
+  gap: 12px;
+}
+
+/* Compact view */
+.compact-thread-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.expand-thread-btn {
+  align-self: flex-start;
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  font-size: 0.85em;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.expand-thread-btn:hover {
+  background: #f5f5f5;
+  border-color: #4a90d9;
+  color: #4a90d9;
+}
+
+.expanded-replies {
+  margin-left: 24px;
+  margin-top: 8px;
+  padding-left: 12px;
+  border-left: 2px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Thread stats */
+.thread-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  font-size: 0.85em;
+  color: #666;
+}
+
+/* View mode switcher */
+.view-mode-switcher {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: #f0f0f0;
+  border-radius: 8px;
+  width: fit-content;
+}
+
+.view-mode-switcher button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+  color: #666;
+  transition: all 0.2s;
+}
+
+.view-mode-switcher button:hover {
+  background: rgba(0,0,0,0.05);
+}
+
+.view-mode-switcher button.active {
+  background: white;
+  color: #333;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.view-mode-switcher button .icon {
+  font-size: 1.1em;
+}
+
+/* Thread reply indicator in bubble */
+.thread-reply-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #e3f2fd;
+  border-radius: 4px;
+  font-size: 0.8em;
+  color: #1976d2;
+  margin-bottom: 6px;
+  width: fit-content;
+}
+
+.thread-reply-indicator::before {
+  content: '↩';
+}
+
+/* Mobile adjustments */
+@media (max-width: 600px) {
+  .thread-content {
+    margin-left: 16px;
+  }
+  
+  .thread-node.depth-1 > .thread-content {
+    margin-left: 8px;
+  }
+  
+  .thread-node.depth-2 > .thread-content {
+    margin-left: 16px;
+  }
+  
+  .thread-node.depth-3 > .thread-content {
+    margin-left: 24px;
+  }
+  
+  .thread-node.depth-4 > .thread-content,
+  .thread-node.depth-5 > .thread-content {
+    margin-left: 28px;
+  }
+  
+  .view-mode-switcher button {
+    padding: 6px 10px;
+  }
+  
+  .view-mode-switcher button span:not(.icon) {
+    display: none;
+  }
+}
+
+/* Animations */
+@keyframes thread-expand {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 1000px;
+  }
+}
+
+.thread-children {
+  animation: thread-expand 0.3s ease-out;
+}

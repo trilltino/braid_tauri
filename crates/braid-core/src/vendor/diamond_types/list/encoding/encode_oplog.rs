@@ -633,7 +633,7 @@ impl ListOpLog {
             if opts.store_start_branch_content {
                 let branch_here = ListBranch::new_at_local_version(self, from_version);
                 // dbg!(&branch_here);
-                write_content_rope(&mut start_branch, &branch_here.content.borrow(), compress_bytes.as_mut());
+                write_content_rope(&mut start_branch, &branch_here.content, compress_bytes.as_mut());
             }
         }
 
@@ -645,7 +645,7 @@ impl ListOpLog {
             if verbose {
                 println!("End content length (uncompressed) {}", branch_here.content.len_bytes());
             }
-            write_content_rope(&mut end_branch, &branch_here.content.borrow(), compress_bytes.as_mut());
+            write_content_rope(&mut end_branch, &branch_here.content, compress_bytes.as_mut());
 
             Some(end_branch)
         } else { None };

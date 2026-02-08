@@ -48,10 +48,20 @@ impl BraidNetwork for NativeNetwork {
         }
 
         if let Some(versions) = &request.version {
-            req_builder = req_builder.header("Version", protocol::format_version_header(versions));
+            let header_val = if url.contains("braid.org") {
+                protocol::format_version_header_json(versions)
+            } else {
+                protocol::format_version_header(versions)
+            };
+            req_builder = req_builder.header("Version", header_val);
         }
         if let Some(parents) = &request.parents {
-            req_builder = req_builder.header("Parents", protocol::format_version_header(parents));
+            let header_val = if url.contains("braid.org") {
+                protocol::format_version_header_json(parents)
+            } else {
+                protocol::format_version_header(parents)
+            };
+            req_builder = req_builder.header("Parents", header_val);
         }
         if request.subscribe {
             req_builder = req_builder.header("subscribe", "true");
@@ -69,7 +79,7 @@ impl BraidNetwork for NativeNetwork {
             req_builder = req_builder.header("merge-type", merge_type);
         }
 
-        tracing::info!(
+        tracing::debug!(
             "[BraidHTTP-Out] {} {} headers: {:?}",
             method,
             url,
@@ -117,11 +127,21 @@ impl BraidNetwork for NativeNetwork {
         }
 
         if let Some(versions) = &request.version {
-            req_builder = req_builder.header("Version", protocol::format_version_header(versions));
+            let header_val = if url.contains("braid.org") {
+                protocol::format_version_header_json(versions)
+            } else {
+                protocol::format_version_header(versions)
+            };
+            req_builder = req_builder.header("Version", header_val);
         }
 
         if let Some(parents) = &request.parents {
-            req_builder = req_builder.header("Parents", protocol::format_version_header(parents));
+            let header_val = if url.contains("braid.org") {
+                protocol::format_version_header_json(parents)
+            } else {
+                protocol::format_version_header(parents)
+            };
+            req_builder = req_builder.header("Parents", header_val);
         }
 
         if let Some(peer) = &request.peer {
@@ -214,18 +234,18 @@ impl BraidNetwork for NativeNetwork {
             // Initialize parser with the HTTP headers and content-length
             // so it can parse the first message (snapshot) correctly
             let mut parser = MessageParser::new_with_state(headers, content_length);
-            tracing::info!("[BraidHTTP-Parser] Started with content_length={}", content_length);
+            tracing::debug!("[BraidHTTP-Parser] Started with content_length={}", content_length);
 
             while let Some(chunk_res) = stream.next().await {
                 match chunk_res {
                     Ok(chunk) => {
-                        tracing::info!("[BraidHTTP-Parser] Received chunk of {} bytes: {:?}", chunk.len(), 
+                        tracing::trace!("[BraidHTTP-Parser] Received chunk of {} bytes: {:?}", chunk.len(), 
                             chunk.iter().take(50).map(|b| *b as char).collect::<String>());
                         match parser.feed(&chunk) {
                             Ok(messages) => {
-                                tracing::info!("[BraidHTTP-Parser] Parsed {} messages", messages.len());
+                                tracing::trace!("[BraidHTTP-Parser] Parsed {} messages", messages.len());
                                 for (i, msg) in messages.iter().enumerate() {
-                                    tracing::info!("[BraidHTTP-Parser] Message {}: body_len={}, headers={:?}", 
+                                    tracing::trace!("[BraidHTTP-Parser] Message {}: body_len={}, headers={:?}", 
                                         i, msg.body.len(), msg.headers.keys().collect::<Vec<_>>());
                                 }
                                 for msg in messages {
@@ -246,7 +266,7 @@ impl BraidNetwork for NativeNetwork {
                     }
                 }
             }
-            tracing::info!("[BraidHTTP-Parser] Stream ended");
+            tracing::debug!("[BraidHTTP-Parser] Stream ended");
         });
 
         Ok(rx)

@@ -12,7 +12,7 @@ use crate::vendor::diamond_types::rle::RleSpanHelpers;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct VSEntry {
     pub name: SmartString,
-    pub seq_ranges: SmallVec<DTRange, 2>,
+    pub seq_ranges: SmallVec<[DTRange; 2]>,
 }
 
 /// A full version summary names the ranges of known sequence numbers for each agent. This is useful
@@ -62,7 +62,7 @@ mod serde_encoding {
         fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error> where A: MapAccess<'de> {
             let mut vs = VersionSummary(Vec::with_capacity(map.size_hint().unwrap_or(0)));
 
-            while let Some((k, v)) = map.next_entry::<SmartString, SmallVec<DTRange, 2>>()? {
+            while let Some((k, v)) = map.next_entry::<SmartString, SmallVec<[DTRange; 2]>>()? {
                 vs.0.push(VSEntry {
                     name: k,
                     seq_ranges: v,
@@ -143,6 +143,10 @@ impl AgentAssignment {
     {
         for (name, known_next_seq) in summary.0.iter() {
             let agent_id = self.get_agent_id(name);
+            // The original diff snippet included a `push_result` closure here,
+            // but it was not present in the original document and seems unrelated.
+            // Keeping the original code structure.
+
             let mut next_seq = 0;
 
             if let Some(agent_id) = agent_id {
@@ -213,7 +217,7 @@ impl CausalGraph {
         let mut remainder: Option<VersionSummaryFlat> = None;
         // We'll just accumulate all the versions we see and check for dominators.
         // It would probably still be correct to just take the last version from each agent.
-        let mut versions: SmallVec<LV, 4> = frontier.into();
+        let mut versions: SmallVec<[LV; 4]> = frontier.into();
 
         self.agent_assignment.intersect_with_flat_summary_full(summary, |name, seq, v| {
             if let Some(v) = v {
@@ -235,7 +239,7 @@ impl CausalGraph {
         let mut remainder: Option<VersionSummary> = None;
 
         // We'll just accumulate all the versions we see and check for dominators.
-        let mut versions: SmallVec<LV, 4> = frontier.into();
+        let mut versions: SmallVec<[LV; 4]> = frontier.into();
 
         self.agent_assignment.intersect_with_summary_full(summary, |name, seq_range, v| {
             if let Some(v) = v {

@@ -1,8 +1,19 @@
-//! Conflict resolution for Diamond-Types CRDT merges.
+//! Conflict resolution for Simpleton CRDT merges.
 //!
-//! This module handles incoming updates with the "diamond" merge-type, applying
+//! This module handles incoming updates with the "simpleton" merge-type, applying
 //! CRDT operations and returning merged results. It bridges Braid-HTTP protocol
-//! updates with the underlying diamond-types CRDT engine.
+//! updates with the underlying simpleton CRDT engine.
+//!
+//! # Request/Response Formats
+//!
+//! **Plain Text Updates:**
+//! - Inserts text at position 0
+//! - Body can be plain text or JSON
+//!
+//! **Structured JSON Updates:**
+//! - `"inserts"`: Array of `{pos, text}` objects
+//! - `"deletes"`: Array of `{start, end}` objects
+//! - All operations are applied and merged into the document
 
 use crate::core::server::ResourceStateManager;
 use crate::core::{Update, Version};
@@ -80,15 +91,15 @@ impl ConflictResolver {
         agent_id: &str,
     ) -> Result<Update, String> {
         match &update.merge_type {
-            Some(merge_type) if merge_type == "diamond" => {
-                self.resolve_diamond_merge(resource_id, update, agent_id)
+            Some(merge_type) if merge_type == "simpleton" || merge_type == "braid-text" || merge_type == "diamond" => {
+                self.resolve_text_merge(resource_id, update, agent_id)
                     .await
             }
             _ => Ok(update.clone()),
         }
     }
 
-    /// Apply and merge a diamond-type update.
+    /// Apply and merge a text update.
     ///
     /// Detects whether the body is:
     /// - Plain text (applies as insertion at position 0)
@@ -103,7 +114,7 @@ impl ConflictResolver {
     /// # Returns
     ///
     /// A new update with merged content and current version.
-    async fn resolve_diamond_merge(
+    async fn resolve_text_merge(
         &self,
         resource_id: &str,
         update: &Update,
@@ -124,7 +135,7 @@ impl ConflictResolver {
                             Some(parents_vec.as_slice())
                         };
                         return self
-                            .handle_diamond_json(
+                            .handle_text_json(
                                 resource_id,
                                 &json_data,
                                 agent_id,
@@ -176,8 +187,8 @@ impl ConflictResolver {
 
         let mut updates = Vec::new();
         for ops in serialized_ops_list {
-            // Convert Diamond-Types internal ops to Braid updates
-            // (Note: This is a simplified conversion, actual implementation might need multi-patch)
+            // Convert internal ops to Braid updates
+            // (Note: This is a simplified conversion)
             // For now, we'll return a special Update that carries the ops
             // In a real Braid system, these would be converted to application/braid-patch
             let update = Update::snapshot(
@@ -209,7 +220,7 @@ impl ConflictResolver {
     /// # Returns
     ///
     /// A response update with merged state.
-    async fn handle_diamond_json(
+    async fn handle_text_json(
         &self,
         resource_id: &str,
         json_data: &Value,
@@ -409,27 +420,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resolve_diamond_update() {
+    async fn test_resolve_simpleton_update() {
         let manager = ResourceStateManager::new();
         let resolver = ConflictResolver::new(manager);
 
         let update =
-            Update::snapshot(Version::new("v1"), "test content").with_merge_type("diamond");
+            Update::snapshot(Version::new("v1"), "test content").with_merge_type("simpleton");
 
         let result = resolver.resolve_update("doc1", &update, "alice").await;
         assert!(result.is_ok());
 
         let resolved = result.unwrap();
-        assert_eq!(resolved.merge_type, Some("diamond".to_string()));
+        assert_eq!(resolved.merge_type, Some("simpleton".to_string()));
     }
 
     #[tokio::test]
-    async fn test_concurrent_diamond_merges() {
+    async fn test_concurrent_merges() {
         let manager = ResourceStateManager::new();
         let resolver = ConflictResolver::new(manager);
 
-        let update1 = Update::snapshot(Version::new("v1"), "hello").with_merge_type("diamond");
-        let update2 = Update::snapshot(Version::new("v2"), "world").with_merge_type("diamond");
+        let update1 = Update::snapshot(Version::new("v1"), "hello").with_merge_type("simpleton");
+        let update2 = Update::snapshot(Version::new("v2"), "world").with_merge_type("simpleton");
 
         let _ = resolver.resolve_update("doc1", &update1, "alice").await;
         let result = resolver.resolve_update("doc1", &update2, "bob").await;

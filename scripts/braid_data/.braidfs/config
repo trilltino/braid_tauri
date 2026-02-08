@@ -1,0 +1,22 @@
+{
+  "peer_id": "braidfs_3c6fa01c",
+  "sync": {
+    "https://braid.org/309_rust": true
+  },
+  "cookies": {
+    "braid.org": "tdt8p22upyv3g8igbnt21yociiq5m0i"
+  },
+  "identities": {},
+  "port": 45678,
+  "ignore_patterns": [
+    ".git",
+    ".git/**",
+    "node_modules/**",
+    ".DS_Store",
+    "*.swp",
+    "*.swo",
+    "*~",
+    ".braidfs/**"
+  ],
+  "debounce_ms": 10
+}

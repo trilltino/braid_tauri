@@ -1,6 +1,6 @@
 use super::mapping;
 use crate::core::server::{BraidState, BraidUpdate};
-use crate::core::{Update, Version};
+use crate::core::Update;
 use crate::fs::state::DaemonState;
 use axum::{
     extract::{Path, State},
@@ -101,11 +101,11 @@ pub async fn handle_get_file(
         store
             .get(&path)
             .map(|v| v.current_version.clone())
-            .unwrap_or_else(|| vec!["initial".to_string()])
+            .unwrap_or_else(|| vec![braid_http::types::Version::String("initial".to_string())])
     };
 
     // Send snapshot response
-    let update = Update::snapshot(Version::new(version[0].clone()), content.clone());
+    let update = Update::snapshot(version[0].clone(), content.clone());
     BraidUpdate(update).into_response()
 }
 

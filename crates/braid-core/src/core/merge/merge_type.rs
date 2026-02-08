@@ -18,16 +18,16 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 /// A patch representing a change to a resource.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MergePatch {
     /// Range or path specifier (e.g., "0:5" or ".foo.bar")
     pub range: String,
     /// The content to insert/replace
     pub content: Value,
     /// Version ID that created this patch
-    pub version: Option<String>,
+    pub version: Option<braid_http::types::Version>,
     /// Parent versions this patch depends on
-    pub parents: Vec<String>,
+    pub parents: Vec<braid_http::types::Version>,
 }
 
 impl MergePatch {
@@ -42,11 +42,11 @@ impl MergePatch {
     }
 
     /// Create with version info.
-    pub fn with_version(range: &str, content: Value, version: &str, parents: Vec<String>) -> Self {
+    pub fn with_version(range: &str, content: Value, version: braid_http::types::Version, parents: Vec<braid_http::types::Version>) -> Self {
         Self {
             range: range.to_string(),
             content,
-            version: Some(version.to_string()),
+            version: Some(version),
             parents,
         }
     }
@@ -60,14 +60,14 @@ pub struct MergeResult {
     /// Rebased patches that can be sent to other clients
     pub rebased_patches: Vec<MergePatch>,
     /// The new version ID created (if any)
-    pub version: Option<String>,
+    pub version: Option<braid_http::types::Version>,
     /// Error message if merge failed
     pub error: Option<String>,
 }
 
 impl MergeResult {
     /// Create a successful merge result.
-    pub fn success(version: Option<String>, rebased_patches: Vec<MergePatch>) -> Self {
+    pub fn success(version: Option<braid_http::types::Version>, rebased_patches: Vec<MergePatch>) -> Self {
         Self {
             success: true,
             rebased_patches,
@@ -120,10 +120,10 @@ pub trait MergeType: Debug + Send + Sync {
     fn get_content(&self) -> String;
 
     /// Get the current version frontier.
-    fn get_version(&self) -> Vec<String>;
+    fn get_version(&self) -> Vec<braid_http::types::Version>;
 
     /// Get all known versions (for sync).
-    fn get_all_versions(&self) -> HashMap<String, Vec<String>>;
+    fn get_all_versions(&self) -> HashMap<String, Vec<braid_http::types::Version>>;
 
     /// Prune old versions that are no longer needed.
     ///
@@ -177,6 +177,12 @@ impl MergeTypeRegistry {
         // Register built-in types
         registry.register("simpleton", |peer_id| {
             Box::new(super::simpleton::SimpletonMergeType::new(peer_id))
+        });
+
+        // Register Diamond Types CRDT for true collaborative editing
+        #[cfg(not(target_arch = "wasm32"))]
+        registry.register("diamond", |peer_id| {
+            Box::new(super::diamond::DiamondMergeType::new(peer_id))
         });
 
         registry

@@ -126,15 +126,30 @@ pub async fn run_daemon(port: u16) -> Result<()> {
     config.port = port;
 
     // Filter out dead domains
+    // Force remove known problematic URLs that might persist in config
+    let bad_urls = vec![
+        "https://braid.org/Braid",
+        "https://braid.org/Main",
+        "https://braid.org/Welcome",
+        "https://braid.org/Protocol",
+        "https://braid.org/wiki",
+        "https://braid.org/about",
+        "https://braid.org/editing",
+    ];
+
+    for url in bad_urls {
+        if config.sync.contains_key(url) {
+            tracing::warn!("[Config] Purging deprecated subscription: {}", url);
+            config.sync.remove(url);
+        }
+    }
+
+    // Filter out other dead/test domains
     config.sync.retain(|url, _| {
         !url.contains("mail.braid.org")
-//             && !url.contains("braid.org/tino")
+            && !url.contains("braid.org/tino")
             && !url.contains("braid.org/tino_test")
-            && !url.contains("braid.org/main")
-            && !url.contains("braid.org/about")
-            && !url.contains("braid.org/wiki")
             && !url.contains("braid.org/xfmail")
-            && !url.contains("braid.org/editing")
             && !url.contains("braid.org/127_xfmail")
             && url != "https://braid.org/"
             && url != "https://braid.org"
@@ -154,9 +169,7 @@ pub async fn run_daemon(port: u16) -> Result<()> {
 
     // Initialize Merge Registry
     let mut merge_registry = crate::core::merge::MergeTypeRegistry::new();
-    merge_registry.register("antimatter", |id| {
-        Box::new(crate::core::merge::AntimatterMergeType::new_native(id))
-    });
+    // Antimatter removed.
     // Simpleton (braid-text) is the primary merge type for text documents
     merge_registry.register("simpleton", |id| {
         Box::new(crate::core::merge::simpleton::SimpletonMergeType::new(id))

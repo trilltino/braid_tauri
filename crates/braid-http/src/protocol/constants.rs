@@ -220,6 +220,9 @@ pub mod merge_types {
 
     /// Diamond-types CRDT merge type for collaborative text editing.
     pub const DIAMOND: &str = "diamond";
+
+    /// Simpleton merge type for basic file editing.
+    pub const SIMPLETON: &str = "simpleton";
 }
 
 // =============================================================================

@@ -761,16 +761,24 @@ impl MergeType for DiamondMergeType {
             crdt.add_delete(0..len);
         }
         crdt.add_insert(0, content);
-        MergeResult::success(Some(crdt.get_version()), Vec::new())
+        MergeResult::success(Some(braid_http::types::Version::String(crdt.get_version())), Vec::new())
     }
 
     fn apply_patch(&mut self, patch: MergePatch) -> MergeResult {
         let mut crdt = self.crdt.lock();
-        let parents_refs: Vec<&str> = patch.parents.iter().map(|s| s.as_str()).collect();
+        let parents_strings: Vec<String> = patch.parents.iter().map(|p| match p {
+            braid_http::types::Version::String(s) => s.clone(),
+            braid_http::types::Version::Integer(i) => i.to_string(),
+        }).collect();
+        let parents_refs: Vec<&str> = parents_strings.iter().map(|s| s.as_str()).collect();
+
         let agent_id = patch
             .version
             .as_ref()
-            .and_then(|v| v.split('-').next())
+            .and_then(|v| match v {
+                braid_http::types::Version::String(s) => s.split('-').next(),
+                _ => None,
+            })
             .unwrap_or("remote");
 
         let content_str = match &patch.content {
@@ -800,7 +808,7 @@ impl MergeType for DiamondMergeType {
                         &parents_refs,
                         start,
                         &content_str,
-                        patch.version.as_deref(),
+                        patch.version.as_ref().map(|v| v.to_string()).as_deref(),
                     );
                 } else {
                     // Deletion (and possible replacement if content is not empty)
@@ -808,7 +816,7 @@ impl MergeType for DiamondMergeType {
                         agent_id,
                         &parents_refs,
                         start..end,
-                        patch.version.as_deref(),
+                        patch.version.as_ref().map(|v| v.to_string()).as_deref(),
                     );
                     if !content_str.is_empty() {
                         crdt.add_insert_remote_versioned(
@@ -816,7 +824,7 @@ impl MergeType for DiamondMergeType {
                             &parents_refs,
                             start,
                             &content_str,
-                            patch.version.as_deref(),
+                            patch.version.as_ref().map(|v| v.to_string()).as_deref(),
                         );
                     }
                 }
@@ -832,7 +840,7 @@ impl MergeType for DiamondMergeType {
                 &parents_refs,
                 0,
                 &content_str,
-                patch.version.as_deref(),
+                patch.version.as_ref().map(|v| v.to_string()).as_deref(),
             );
         }
 
@@ -877,7 +885,8 @@ impl MergeType for DiamondMergeType {
             crdt.add_insert(0, &content_str);
         }
 
-        let version = crdt.get_version();
+        let version_str = crdt.get_version();
+        let version = braid_http::types::Version::String(version_str);
         let mut out_patch = patch;
         out_patch.version = Some(version.clone());
         out_patch.parents = vec![version.clone()];
@@ -889,11 +898,11 @@ impl MergeType for DiamondMergeType {
         self.crdt.lock().content()
     }
 
-    fn get_version(&self) -> Vec<String> {
-        vec![self.crdt.lock().get_version()]
+    fn get_version(&self) -> Vec<braid_http::types::Version> {
+        vec![braid_http::types::Version::String(self.crdt.lock().get_version())]
     }
 
-    fn get_all_versions(&self) -> HashMap<String, Vec<String>> {
+    fn get_all_versions(&self) -> HashMap<String, Vec<braid_http::types::Version>> {
         let mut map = HashMap::new();
         map.insert(self.crdt.lock().get_version(), Vec::new());
         map

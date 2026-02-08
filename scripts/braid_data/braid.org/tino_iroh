@@ -1,0 +1,77 @@
+#  If you're building a native app, you can do anything.
+supporting native P2P braid-http in a rust app, is perfectly situated to do some trailblazing work in integrating HTTP/3 over iroh and then adding braid-http support to that HTTP/3 implementation.
+
+
+# LocalLink. 
+
+Rust p2p Braid http app for information sharing across local and connected networks
+
+
+Iroh supports p2p QUIC in rust.
+It solves the problem of DNS and TLS by doing a pubkey thing and implementing a DHT to route peers together.
+It's the best P2P networking system out there. All the P2P projects are switching to iroh right now.
+ it runs QUIC, so you can run HTTP/3 over it. There are some 
+
+A new URI scheme would no longer need to rely on DNS and TLS. So it could have P2P hostnames. We would probably need to invent a new URI scheme, but I'm really excited for that.
+
+Exciting possibility: Integrate Braid-HTTP with Iroh
+Iroh = modern P2P networking library in Rust
+Uses QUIC protocol (supports HTTP/3)
+Solves DNS/TLS issues using public keys + DHT for peer routing
+Becoming the go-to choice for P2P projects
+How HTTP/3 works over QUIC
+Iroh documentation and examples (start with that GitHub repo)
+URI schemes (how web addresses work - like https:// vs potential new P2P schemes)
+DHT (Distributed Hash Tables) - how peers find each other without central servers
+
+How DNS works (to understand what you're replacing)
+Public key cryptography (your "address" becomes your public key)
+Content addressing vs location addressing
+How IPFS, Hypercore, or other P2P systems handle naming
+
+# Resources
+
+### Iroh
+https://docs.iroh.computer/what-is-iroh
+
+https://www.youtube.com/watch?v=ogN_mBkWu7o&t=1s
+
+https://github.com/n0-computer/iroh-proxy-utils
+
+
+
+###  UDP, TCP , QUIC , HTTP3
+
+TCP - https://datatracker.ietf.org/doc/html/rfc9293  
+
+https://en.wikipedia.org/wiki/Transmission_Control_Protocol
+
+SCTP - https://en.wikipedia.org/wiki/Stream_Control_Transmission_Protocol
+
+https://datatracker.ietf.org/doc/html/rfc4960
+
+https://docs.iroh.computer/protocols/writing-a-protocol
+
+HTTP - https://en.wikipedia.org/wiki/HTTP
+
+https://datatracker.ietf.org/doc/html/rfc2616
+
+HTTP3
+https://en.wikipedia.org/wiki/HTTP/3 - 
+
+https://datatracker.ietf.org/doc/html/rfc9114
+
+
+UDP - https://en.wikipedia.org/wiki/User_Datagram_Protocol
+
+https://www.ietf.org/rfc/rfc768.txt
+
+### Braid
+
+https://braid.org/@toomim/protocol/web
+
+https://tech.slashdot.org/story/09/10/14/1219215/tim-berners-lee-is-sorry-about-the-slashes
+
+
+
+

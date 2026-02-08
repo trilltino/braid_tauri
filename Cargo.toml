@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "xf_tauri",
+    "local_link",
     "crates/braid-core",
     "crates/braidfs-daemon",
     "crates/braidfs-nfs",

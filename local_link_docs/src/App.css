@@ -1,0 +1,147 @@
+/* Home/Splash Layout - Centered */
+.home-navbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background-color: transparent;
+  border-bottom: none;
+}
+
+.main-wrapper {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--color-bg-primary);
+}
+
+/* Splash Brand Section */
+.auth-box {
+  background: transparent;
+  padding: 0;
+  width: 100%;
+  max-width: 600px;
+  text-align: center;
+  position: relative;
+  z-index: 1001;
+}
+
+.auth-header-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 32px;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity var(--transition-slow) ease-out, transform var(--transition-slow) ease-out;
+}
+
+.auth-header-brand.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Home Page Typography */
+#auth-title {
+  font-family: var(--font-brand);
+  font-size: 56px;
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: -2px;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: baseline;
+  overflow: hidden;
+}
+
+.collapsible {
+  display: inline-block;
+  max-width: 200px; /* Large enough for the text */
+  opacity: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 2.5s cubic-bezier(0.4, 0, 0.2, 1), 
+              opacity 2.5s cubic-bezier(0.4, 0, 0.2, 1),
+              letter-spacing 2.5s cubic-bezier(0.4, 0, 0.2, 1),
+              margin 2.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.condensed .collapsible {
+  max-width: 0;
+  opacity: 0;
+  letter-spacing: -10px;
+  margin: 0;
+}
+
+.auth-slogan {
+  font-size: 20px;
+  color: var(--color-text-muted);
+  font-weight: 400;
+  margin: 0;
+  opacity: 1;
+  transition: opacity var(--transition-slow) ease-out;
+}
+
+#slogan-target {
+  color: var(--color-text-secondary);
+  font-weight: 700;
+  display: inline-block;
+  transition: opacity var(--transition-speed) ease, transform var(--transition-speed) ease;
+  margin-left: 4px;
+}
+
+/* Slogan Animations */
+.slogan-fade {
+  opacity: 0;
+  transform: translateY(5px);
+}
+
+.slogan-gone {
+  opacity: 0 !important;
+  pointer-events: none;
+  display: none;
+}
+
+/* Enter Link to Docs */
+.enter-link.small-enter {
+  font-size: 14px;
+  text-transform: lowercase;
+  margin-top: 8px;
+}
+
+.enter-link {
+  font-size: 20px;
+  color: var(--color-text-muted);
+  font-weight: 400;
+  margin: 0;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all var(--transition-slow) ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.enter-link.visible {
+  opacity: 1;
+  transform: translateY(0);
+  cursor: pointer;
+}
+
+.enter-link:hover {
+  color: var(--color-text-primary);
+}
+
+.enter-link .arrow {
+  transition: transform var(--transition-speed) ease;
+}
+
+.enter-link:hover .arrow {
+  transform: translateX(4px);
+}

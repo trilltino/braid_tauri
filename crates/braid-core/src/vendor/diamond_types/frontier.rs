@@ -20,9 +20,9 @@ use crate::vendor::diamond_types::LV;
 ///
 /// A frontier must always remain sorted (in numerical order). Note: This is not checked when
 /// deserializing via serde!
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
-pub struct Frontier(pub SmallVec<LV, 2>);
+pub struct Frontier(pub SmallVec<[LV; 2]>);
 
 pub type FrontierRef<'a> = &'a [LV];
 
@@ -39,8 +39,8 @@ impl<'a> From<FrontierRef<'a>> for Frontier {
     }
 }
 
-impl From<SmallVec<LV, 2>> for Frontier {
-    fn from(f: SmallVec<LV, 2>) -> Self {
+impl From<SmallVec<[LV; 2]>> for Frontier {
+    fn from(f: SmallVec<[LV; 2]>) -> Self {
         debug_assert_sorted(f.as_slice());
         Frontier(f)
     }
@@ -127,7 +127,7 @@ pub(crate) fn debug_assert_sorted(frontier: FrontierRef) {
     debug_assert!(frontier_is_sorted(frontier));
 }
 
-pub(crate) fn sort_frontier<const N: usize>(v: &mut SmallVec<LV, N>) {
+pub(crate) fn sort_frontier<const N: usize>(v: &mut SmallVec<[LV; N]>) {
     if !frontier_is_sorted(v.as_slice()) {
         v.sort_unstable();
     }
@@ -135,7 +135,7 @@ pub(crate) fn sort_frontier<const N: usize>(v: &mut SmallVec<LV, N>) {
 
 impl IntoIterator for Frontier {
     type Item = LV;
-    type IntoIter = <SmallVec<LV, 2> as IntoIterator>::IntoIter;
+    type IntoIter = <SmallVec<[LV; 2]> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -158,13 +158,13 @@ impl Frontier {
     }
 
     pub fn from_unsorted(data: &[LV]) -> Self {
-        let mut arr: SmallVec<LV, 2> = data.into();
+        let mut arr: SmallVec<[LV; 2]> = data.into();
         sort_frontier(&mut arr);
         Self(arr)
     }
 
     pub fn from_unsorted_iter<I: Iterator<Item = LV>>(iter: I) -> Self {
-        let mut arr: SmallVec<LV, 2> = iter.collect();
+        let mut arr: SmallVec<[LV; 2]> = iter.collect();
         sort_frontier(&mut arr);
         Self(arr)
     }
@@ -514,7 +514,7 @@ pub fn local_frontier_is_root(branch: &[LV]) -> bool {
 /// This method clones a version or parents vector. Its slightly faster and smaller than just
 /// calling v.clone() directly.
 #[inline]
-pub fn clone_smallvec<T, const LEN: usize>(v: &SmallVec<T, LEN>) -> SmallVec<T, LEN>
+pub fn clone_smallvec<T: Clone, const LEN: usize>(v: &SmallVec<[T; LEN]>) -> SmallVec<[T; LEN]>
 where
     T: Clone + Copy,
 {

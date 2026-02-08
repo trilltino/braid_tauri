@@ -1,0 +1,124 @@
+    Checking local_link_server v0.2.0 (C:\Users\isich\braid_tauri\crates\server)
+warning: unused import: `error`
+  --> crates\server\src\chat\ai\mod.rs:18:22
+   |
+18 | use tracing::{debug, error, info, warn};
+   |                      ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `ChatUpdate`
+ --> crates\server\src\chat\crdt.rs:6:36
+  |
+6 | use crate::core::models::{BlobRef, ChatUpdate, Message, MessageType};
+  |                                    ^^^^^^^^^^
+
+warning: unused import: `sqlx::sqlite::SqlitePoolOptions`
+ --> crates\server\src\chat\friends\mod.rs:9:5
+  |
+9 | use sqlx::sqlite::SqlitePoolOptions;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `delete`
+ --> crates\server\src\chat\handlers\mod.rs:7:15
+  |
+7 |     routing::{delete, get, post},
+  |               ^^^^^^
+
+warning: unused import: `IntoResponse`
+  --> crates\server\src\chat\handlers\braid_subscribe.rs:41:16
+   |
+41 |     response::{IntoResponse, Response},
+   |                ^^^^^^^^^^^^
+
+warning: unused import: `Multipart`
+  --> crates\server\src\chat\handlers\chat.rs:14:15
+   |
+14 |     extract::{Multipart, Path, State},
+   |               ^^^^^^^^^
+
+warning: unused import: `debug`
+  --> crates\server\src\chat\mail\mod.rs:24:15
+   |
+24 | use tracing::{debug, error, info, warn};
+   |               ^^^^^
+
+warning: unused import: `Error`
+ --> crates\server\src\core\auth\handlers\auth_me.rs:4:26
+  |
+4 | use crate::core::error::{Error, Result};
+  |                          ^^^^^
+
+warning: unused import: `uuid::Uuid`
+ --> crates\server\src\core\models\mod.rs:4:5
+  |
+4 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `MergeResult`
+  --> crates\server\src\website\handlers.rs:17:5
+   |
+17 |     MergeResult,
+   |     ^^^^^^^^^^^
+
+warning: unused import: `braid_http::protocol::headers as header_utils`
+  --> crates\server\src\website\handlers.rs:20:5
+   |
+20 | use braid_http::protocol::headers as header_utils;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `warn`
+  --> crates\server\src\website\handlers.rs:26:28
+   |
+26 | use tracing::{error, info, warn};
+   |                            ^^^^
+
+warning: unused import: `warn`
+  --> crates\server\src\website\wiki.rs:11:21
+   |
+11 | use tracing::{info, warn};
+   |                     ^^^^
+
+warning: unused variable: `path_clone`
+  --> crates\server\src\website\handlers.rs:71:13
+   |
+71 |         let path_clone = path_str.clone();
+   |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_path_clone`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+   --> crates\server\src\lib.rs:171:9
+    |
+171 |         crate::website::handlers::get_wiki_page(Path(path), State(state)).await
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-------------------------- argument #3 of type `HeaderMap` is missing
+    |
+note: function defined here
+   --> crates\server\src\website\handlers.rs:41:14
+    |
+ 41 | pub async fn get_wiki_page(
+    |              ^^^^^^^^^^^^^
+...
+ 44 |     headers: HeaderMap,
+    |     ------------------
+help: provide the argument
+    |
+171 |         crate::website::handlers::get_wiki_page(Path(path), State(state), /* HeaderMap */).await
+    |                                                                         +++++++++++++++++
+
+error[E0063]: missing field `daemon_port` in initializer of `WikiManager`
+  --> crates\server\src\website\wiki.rs:45:9
+   |
+45 |         Self {
+   |         ^^^^ missing `daemon_port`
+
+warning: unused variable: `message_type`
+   --> crates\server\src\chat\crdt.rs:128:25
+    |
+128 |                         message_type,
+    |                         ^^^^^^^^^^^^ help: try ignoring the field: `message_type: _`
+
+Some errors have detailed explanations: E0061, E0063.
+For more information about an error, try `rustc --explain E0061`.
+warning: `local_link_server` (lib) generated 15 warnings
+error: could not compile `local_link_server` (lib) due to 2 previous errors; 15 warnings emitted

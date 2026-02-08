@@ -10,14 +10,74 @@
 //! └── .braidfs/        # Internal blob storage (managed by daemon)
 //! ```
 
+use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::PathBuf;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
-/// Get the BRAID_ROOT directory from environment or default
+#[derive(Serialize, Deserialize, Debug)]
+struct BraidConfig {
+    braid_root: Option<PathBuf>,
+}
+
+/// Get the global configuration path
+fn get_config_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("local_link").join("config.json"))
+}
+
+/// Load the persistent root from config file
+pub fn load_persistent_root() -> Option<PathBuf> {
+    let path = get_config_path()?;
+    if !path.exists() {
+        return None;
+    }
+
+    match fs::read_to_string(&path) {
+        Ok(content) => match serde_json::from_str::<BraidConfig>(&content) {
+            Ok(config) => config.braid_root,
+            Err(e) => {
+                warn!("Failed to parse config file at {:?}: {}", path, e);
+                None
+            }
+        },
+        Err(e) => {
+            warn!("Failed to read config file at {:?}: {}", path, e);
+            None
+        }
+    }
+}
+
+/// Save a path as the persistent Braid root
+pub fn save_persistent_root(root: PathBuf) -> anyhow::Result<()> {
+    let path = get_config_path().ok_or_else(|| anyhow::anyhow!("Could not determine config dir"))?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let config = BraidConfig {
+        braid_root: Some(root),
+    };
+    let json = serde_json::to_string_pretty(&config)?;
+    fs::write(path, json)?;
+    Ok(())
+}
+
+/// Get the BRAID_ROOT directory from environment, persistent config, or default
 pub fn braid_root() -> PathBuf {
-    std::env::var("BRAID_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("braid_sync"))
+    // 1. Check environment variable
+    if let Ok(val) = std::env::var("BRAID_ROOT") {
+        return PathBuf::from(val);
+    }
+
+    // 2. Check persistent config
+    if let Some(root) = load_persistent_root() {
+        // Set env var so subprocesses see it too
+        std::env::set_var("BRAID_ROOT", &root);
+        return root;
+    }
+
+    // 3. Default fallback
+    PathBuf::from("braid_data")
 }
 
 /// Set the BRAID_ROOT directory at runtime

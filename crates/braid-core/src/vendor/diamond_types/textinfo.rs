@@ -1,4 +1,4 @@
-use jumprope::JumpRopeBuf;
+use jumprope::JumpRope;
 use crate::vendor::rle::HasLength;
 use crate::vendor::diamond_types::causalgraph::graph::Graph;
 use crate::vendor::diamond_types::dtrange::DTRange;
@@ -71,7 +71,7 @@ impl TextInfo {
     }
 
     #[inline(always)]
-    pub(crate) fn apply_op_to(&self, op: ListOpMetrics, dest: &mut JumpRopeBuf) {
+    pub(crate) fn apply_op_to(&self, op: ListOpMetrics, dest: &mut JumpRope) {
         // let xf_pos = op.loc.span.start;
         match op.kind {
             ListOpKind::Ins => {

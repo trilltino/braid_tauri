@@ -11,8 +11,7 @@ pub use smallvec;
 pub mod core;
 pub mod vendor;
 
-#[cfg(feature = "antimatter")]
-pub mod antimatter;
+// Antimatter module removed in favor of Diamond Types
 
 #[cfg(feature = "blob")]
 pub use braid_blob as blob;
@@ -38,8 +37,6 @@ pub use crate::core::server::{BraidLayer, BraidState, ConflictResolver, ServerCo
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::core::merge;
 
-#[cfg(feature = "antimatter")]
-pub use crate::antimatter::AntimatterCrdt;
-
 #[cfg(feature = "blob")]
 pub use braid_blob::BlobStore;
+

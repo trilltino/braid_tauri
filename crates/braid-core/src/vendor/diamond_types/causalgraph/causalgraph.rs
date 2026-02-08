@@ -5,7 +5,7 @@ use crate::vendor::rle::zip::rle_zip;
 
 use crate::vendor::diamond_types::{AgentId, CausalGraph, LV};
 use crate::vendor::diamond_types::causalgraph::*;
-use crate::vendor::diamond_types::causalgraph::agent_assignment::remote_ids::{RemoteFrontier, RemoteFrontierOwned};
+use crate::vendor::diamond_types::causalgraph::agent_assignment::remote_ids::{RemoteFrontier, RemoteFrontierOwned, RemoteVersionOwned};
 use crate::vendor::diamond_types::causalgraph::agent_span::AgentSpan;
 use crate::vendor::diamond_types::causalgraph::entry::CGEntry;
 use crate::vendor::diamond_types::causalgraph::graph::GraphEntrySimple;
@@ -246,8 +246,17 @@ impl CausalGraph {
         self.graph.make_simple_graph(self.version.as_ref())
     }
 
+    pub fn get_remote_version(&self, v: LV) -> RemoteVersionOwned {
+        self.agent_assignment.local_to_remote_version(v).to_owned()
+    }
+
     pub fn remote_frontier(&self) -> RemoteFrontier<'_> {
         self.agent_assignment.local_to_remote_frontier(self.version.as_ref())
+    }
+
+    fn get_remote_version_2(&self, v: LV) -> SmallVec<[RemoteVersionOwned; 2]> {
+        let f = self.graph.parents_at_version(v);
+        f.iter().map(|&v| self.get_remote_version(v)).collect()
     }
 
     pub fn remote_frontier_owned(&self) -> RemoteFrontierOwned {
@@ -259,13 +268,13 @@ impl CausalGraph {
         self.iter_range((0..self.len()).into())
     }
 
-    pub fn diff_since(&self, frontier: &[LV]) -> SmallVec<DTRange, 4> {
+    pub fn diff_since(&self, frontier: &[LV]) -> SmallVec<[DTRange; 4]> {
         let mut result = self.diff_since_rev(frontier);
         result.reverse();
         result
     }
 
-    pub fn diff_since_rev(&self, frontier: &[LV]) -> SmallVec<DTRange, 4> {
+    pub fn diff_since_rev(&self, frontier: &[LV]) -> SmallVec<[DTRange; 4]> {
         let (only_a, only_b) = self.graph.diff_rev(frontier, self.version.as_ref());
         debug_assert!(only_a.is_empty());
         only_b

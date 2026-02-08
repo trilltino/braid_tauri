@@ -9,7 +9,7 @@ use crate::vendor::diamond_types::rle::{KVPair, RleSpanHelpers, RleVec};
 #[derive(Debug, Clone)]
 enum TestGraphEntry1 {
     Merge {
-        parents: SmallVec<usize, 2>, // Could have 0 or 1 items.
+        parents: SmallVec<[usize; 2]>, // Could have 0 or 1 items.
         // child: usize,
         // state: MergeState,
     },
@@ -37,7 +37,7 @@ impl Graph {
         version_map.insert(vec![], usize::MAX); // ROOT entry.
 
         for e in self.entries.iter() {
-            let mut split_points: SmallVec<usize, 4> = smallvec![];
+            let mut split_points: SmallVec<[usize; 4]> = smallvec![];
             // let mut split_points: SmallVec<usize, 4> = smallvec![e.span.last()];
 
             // let mut children = e.child_indexes.clone();
@@ -166,7 +166,7 @@ impl Graph {
         // version_map.insert(vec![], usize::MAX); // ROOT entry.
 
         for e in self.entries.iter() {
-            let mut split_points: SmallVec<usize, 4> = smallvec![];
+            let mut split_points: SmallVec<[usize; 4]> = smallvec![];
             // let mut split_points: SmallVec<usize, 4> = smallvec![e.span.last()];
 
             // let mut children = e.child_indexes.clone();
@@ -194,7 +194,7 @@ impl Graph {
                 let end = last + 1;
                 // println!("{start} .. {last} / end: {end} count {num_children} parents {:?}", parents);
 
-                let parents: SmallVec<usize, 2> = if parents.len() == 0 {
+                let parents: SmallVec<[usize; 2]> = if parents.len() == 0 {
                     root_idx.iter().copied().collect()
                 } else {
                     parents.iter().map(|p| {
@@ -284,7 +284,7 @@ impl Graph {
 #[derive(Debug, Clone)]
 enum TestGraphEntry2 {
     Merge {
-        parents: SmallVec<usize, 2>, // Could have 0 or 1 items.
+        parents: SmallVec<[usize; 2]>, // Could have 0 or 1 items.
         span: DTRange,
     },
     Split {
@@ -348,7 +348,7 @@ fn ge1_to_ge2(input: &Vec<TestGraphEntry1>) -> Vec<TestGraphEntry2> {
 #[derive(Debug, Clone)]
 enum TestGraphEntry3 {
     Merge {
-        parents: SmallVec<usize, 2>, // Could have 0 or 1 items.
+        parents: SmallVec<[usize; 2]>, // Could have 0 or 1 items.
     },
     Ops {
         parent: usize,

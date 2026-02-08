@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 
-use jumprope::JumpRopeBuf;
+use jumprope::JumpRope;
 use smartstring::alias::String as SmartString;
 
 use crate::vendor::rle::intersect::rle_intersect_rev;
@@ -352,7 +352,7 @@ impl M2Tracker {
         op_ctx: &ListOperationCtx,
         ops: &RleVec<KVPair<ListOpMetrics>>,
         range: DTRange,
-        mut to: Option<&mut JumpRopeBuf>,
+        mut to: Option<&mut JumpRope>,
     ) {
         if range.is_empty() {
             return;
@@ -387,7 +387,7 @@ impl M2Tracker {
         agent: AgentId,
         op_pair: &KVPair<ListOpMetrics>,
         content: Option<&str>,
-        mut to: Option<&mut JumpRopeBuf>,
+        mut to: Option<&mut JumpRope>,
     ) {
         let mut op_pair = op_pair.clone();
 
@@ -675,7 +675,7 @@ impl M2Tracker {
         ops: &RleVec<KVPair<ListOpMetrics>>,
         start_at: Frontier,
         rev_spans: &[DTRange],
-        mut apply_to: Option<&mut JumpRopeBuf>,
+        mut apply_to: Option<&mut JumpRope>,
     ) -> Frontier {
         let mut walker = SpanningTreeWalker::new(graph, rev_spans, start_at);
 
@@ -1068,7 +1068,7 @@ impl TextInfo {
     /// Add everything in merge_frontier into the set..
     pub fn merge_into(
         &self,
-        into: &mut JumpRopeBuf,
+        into: &mut JumpRope,
         cg: &CausalGraph,
         from: &[LV],
         merge_frontier: &[LV],
@@ -1104,7 +1104,7 @@ impl TextInfo {
     }
 
     // /// Add everything in merge_frontier into the set..
-    // pub fn merge_into(&self, into: &mut JumpRopeBuf, cg: &CausalGraph, from: &[LV], merge_frontier: &[LV]) -> Frontier {
+    // pub fn merge_into(&self, into: &mut JumpRope, cg: &CausalGraph, from: &[LV], merge_frontier: &[LV]) -> Frontier {
     //     let (graph, flat) = match FlattenedOps::new_from_subgraph(cg, from, merge_frontier, &self.ops) {
     //         Ok(flat) => { flat }
     //         Err(final_frontier) => { return final_frontier; }
@@ -1164,7 +1164,7 @@ mod test {
         let mut list = SimpleOpLog::new();
         list.add_insert("a", 0, "aaa");
 
-        let mut result = JumpRopeBuf::new();
+        let mut result = JumpRope::new();
         list.merge_raw(&mut result, &[], &[1]);
         list.merge_raw(&mut result, &[1], &[2]);
 
@@ -1178,7 +1178,7 @@ mod test {
         list.goop(5);
         list.add_insert("a", 1, "bb");
 
-        let mut result = JumpRopeBuf::new();
+        let mut result = JumpRope::new();
         let f1 = list.merge_raw(&mut result, &[], &[5]);
         list.merge_raw(&mut result, f1.as_ref(), &[7]);
 
@@ -1274,7 +1274,7 @@ mod test {
         list.add_insert_at("a", &[], 0, "aaa");
         list.add_insert_at("b", &[], 0, "bbb");
 
-        let mut content = JumpRopeBuf::new();
+        let mut content = JumpRope::new();
         let mut t = M2Tracker::new();
         t.apply_range(
             &list.cg.agent_assignment,
@@ -1315,7 +1315,7 @@ mod test {
         list.add_delete_at("a", &[2], 1..2);
         list.add_delete_at("b", &[2], 0..3);
 
-        let mut content = JumpRopeBuf::new();
+        let mut content = JumpRope::new();
         let mut t = M2Tracker::new();
         t.apply_range(
             &list.cg.agent_assignment,
@@ -1356,7 +1356,7 @@ mod test {
 
         let mut t = M2Tracker::new();
 
-        let mut content = JumpRopeBuf::new();
+        let mut content = JumpRope::new();
         let end = list.cg.len();
         // dbg!(end);
         t.apply_range(

@@ -1,0 +1,166 @@
+﻿cargo : warning: unused import: `error`
+At line:1 char:5
++ =1; cargo run -p local_link_server > server.log 2>&1
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: unused import:  
+   `error`:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  --> crates\server\src\chat\ai\mod.rs:18:22
+   |
+18 | use tracing::{debug, error, info, warn};
+   |                      ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `ChatUpdate`
+ --> crates\server\src\chat\crdt.rs:6:36
+  |
+6 | use crate::core::models::{BlobRef, ChatUpdate, Message, Message...
+  |                                    ^^^^^^^^^^
+
+warning: unused import: `sqlx::sqlite::SqlitePoolOptions`
+ --> crates\server\src\chat\friends\mod.rs:9:5
+  |
+9 | use sqlx::sqlite::SqlitePoolOptions;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `delete`
+ --> crates\server\src\chat\handlers\mod.rs:6:26
+  |
+6 |     routing::{get, post, delete},
+  |                          ^^^^^^
+
+warning: unused import: `Multipart`
+  --> crates\server\src\chat\handlers\chat.rs:14:15
+   |
+14 |     extract::{Multipart, Path, State},
+   |               ^^^^^^^^^
+
+warning: unused import: `IntoResponse`
+  --> crates\server\src\chat\handlers\braid_subscribe.rs:41:16
+   |
+41 |     response::{IntoResponse, Response},
+   |                ^^^^^^^^^^^^
+
+warning: unused import: `debug`
+  --> crates\server\src\chat\mail\mod.rs:24:15
+   |
+24 | use tracing::{debug, error, info, warn};
+   |               ^^^^^
+
+warning: unused import: `Error`
+ --> crates\server\src\core\auth\handlers\auth_me.rs:4:26
+  |
+4 | use crate::core::error::{Error, Result};
+  |                          ^^^^^
+
+warning: unused import: `uuid::Uuid`
+ --> crates\server\src\core\models\mod.rs:4:5
+  |
+4 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `Json`
+  --> crates\server\src\website\handlers.rs:11:5
+   |
+11 |     Json,
+   |     ^^^^
+
+warning: unused import: `MergeResult`
+  --> crates\server\src\website\handlers.rs:16:5
+   |
+16 |     MergeResult,
+   |     ^^^^^^^^^^^
+
+warning: unused import: `braid_http::protocol::headers as 
+header_utils`
+  --> crates\server\src\website\handlers.rs:19:5
+   |
+19 | use braid_http::protocol::headers as header_utils;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `warn`
+  --> crates\server\src\website\handlers.rs:24:28
+   |
+24 | use tracing::{error, info, warn};
+   |                            ^^^^
+
+warning: unused variable: `message_type`
+   --> crates\server\src\chat\crdt.rs:128:25
+    |
+128 |                         message_type,
+    |                         ^^^^^^^^^^^^ help: try ignoring the 
+field: `message_type: _`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: fields `room_id`, `last_processed_version`, and 
+`pending_mentions` are never read
+  --> crates\server\src\chat\ai\mod.rs:65:5
+   |
+64 | struct AiRoomState {
+   |        ----------- fields in this struct
+65 |     room_id: String,
+   |     ^^^^^^^
+66 |     last_processed_version: Option<String>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+67 |     pending_mentions: Vec<String>,
+   |     ^^^^^^^^^^^^^^^^
+   |
+   = note: `AiRoomState` has derived impls for the traits `Debug` and 
+`Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` on by default
+
+warning: method `append_to_markdown` is never used
+   --> crates\server\src\chat\ai\mod.rs:414:14
+    |
+ 70 | impl AiChatManager {
+    | ------------------ method in this implementation
+...
+414 |     async fn append_to_markdown(
+    |              ^^^^^^^^^^^^^^^^^^
+
+warning: field `inner` is never read
+  --> crates\server\src\chat\crdt.rs:24:5
+   |
+23 | pub struct ChatCrdt {
+   |            -------- field in this struct
+24 |     inner: DiamondCRDT,
+   |     ^^^^^
+
+warning: struct `PageMeta` is never constructed
+  --> crates\server\src\website\handlers.rs:27:8
+   |
+27 | struct PageMeta {
+   |        ^^^^^^^^
+
+warning: `local_link_server` (lib) generated 18 warnings (run `cargo 
+fix --lib -p local_link_server` to apply 13 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 
+0.76s
+     Running 
+`C:\Users\isich\braid_tauri\target\debug\local_link_server.exe`
+[2m2026-02-08T12:06:39.698599Z[0m [32m INFO[0m [2mlocal_link_server[0m[2m:[0m === Braid Server (Modular) ===
+[2m2026-02-08T12:06:39.698687Z[0m [32m INFO[0m [2mlocal_link_server[0m[2m:[0m Services: Core | Chat | Website
+[2m2026-02-08T12:06:39.703097Z[0m [32m INFO[0m [2mlocal_link_server[0m[2m:[0m Storage directory: "braid_data\\peers"
+[2m2026-02-08T12:06:39.707443Z[0m [32m INFO[0m [2mlocal_link_server::core::auth[0m[2m:[0m [Auth] Initialized at "braid_data\\users.sqlite"
+[2m2026-02-08T12:06:39.709480Z[0m [32m INFO[0m [2mlocal_link_server::core::store::json_store[0m[2m:[0m Loaded 0 existing rooms from disk
+[2m2026-02-08T12:06:39.709528Z[0m [32m INFO[0m [2mlocal_link_server::core::store::json_store[0m[2m:[0m JSON ChatStore initialized with 0 rooms
+[2m2026-02-08T12:06:39.711802Z[0m [32m INFO[0m [2mlocal_link_server::chat::friends[0m[2m:[0m [Friends] Initialized
+[2m2026-02-08T12:06:39.712672Z[0m [32m INFO[0m [2mlocal_link_server::chat::ai[0m[2m:[0m [@BraidBot] AI Chat Manager initialized
+[2m2026-02-08T12:06:39.712709Z[0m [32m INFO[0m [2mlocal_link_server::chat::ai[0m[2m:[0m [@BraidBot] AI chats directory: "braid_data\\peers\\ai"
+[2m2026-02-08T12:06:39.712717Z[0m [32m INFO[0m [2mlocal_link_server::chat::ai[0m[2m:[0m [@BraidBot] Using model: ollama::qwen3:4b
+[2m2026-02-08T12:06:39.713915Z[0m [32m INFO[0m [2mlocal_link_server::chat::ai[0m[2m:[0m [@BraidBot] Started watching AI chat files
+[2m2026-02-08T12:06:39.713955Z[0m [32m INFO[0m [2mlocal_link_server::website::wiki[0m[2m:[0m [WikiManager] Initialized with storage: "C:\\Users\\isich\\tino_local_link\\braid.org", daemon_port: 45678
+[2m2026-02-08T12:06:39.713967Z[0m [32m INFO[0m [2mlocal_link_server::website::wiki[0m[2m:[0m [WikiManager] Discovery task started
+
+thread 'main' panicked at crates\server\src\core\router.rs:20:10:
+Path segments must not start with `:`. For capture groups, use 
+`{capture}`. If you meant to literally match a segment starting with 
+a colon, call `without_v07_checks` on the router.
+note: run with `RUST_BACKTRACE=1` environment variable to display a 
+backtrace
+error: process didn't exit successfully: 
+`C:\Users\isich\braid_tauri\target\debug\local_link_server.exe` (exit 
+code: 101)

@@ -187,7 +187,7 @@ extern crate core;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Debug, Formatter};
 
-use jumprope::JumpRopeBuf;
+use jumprope::JumpRope;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
@@ -251,6 +251,8 @@ pub type AgentId = u32;
 /// A local version (as the name implies) is local-only. Local versions generally need to be
 /// converted to RawVersions before being sent over the wire or saved to disk.
 pub type LV = usize;
+
+// Frontier is now defined in frontier.rs and re-exported below.
 
 #[derive(Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(untagged))]
@@ -376,7 +378,7 @@ pub(crate) struct RegisterInfo {
     ops: Vec<ValPair>,
 
     /// Cached version(s) which together store the current HEAD for this register.
-    supremum: SmallVec<usize, 2>,
+    supremum: SmallVec<[usize; 2]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -423,7 +425,7 @@ pub struct Branch {
     // TODO: Replace BTreeMap with something more appropriate later.
     // registers: BTreeMap<LVKey, SmallVec<LV, 2>>, // TODO.
     maps: BTreeMap<LVKey, BTreeMap<SmartString, RegisterState>>, // any objects.
-    pub texts: BTreeMap<LVKey, JumpRopeBuf>,
+    pub texts: BTreeMap<LVKey, JumpRope>,
 }
 
 /// The register stores the specified value, but if conflicts_with is not empty, it has some

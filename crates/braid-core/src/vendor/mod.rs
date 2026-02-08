@@ -1,2 +1,4 @@
-pub mod diamond_types;
+
+
 pub mod rle;
+pub mod diamond_types;

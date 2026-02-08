@@ -59,7 +59,7 @@ pub async fn scan_files(
     }
 
     let elapsed = start_time.elapsed();
-    tracing::debug!(
+    tracing::trace!(
         "scan_files completed in {:?}, found {} changes",
         elapsed,
         changed_files.len()

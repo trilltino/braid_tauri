@@ -1,0 +1,652 @@
+
+
+
+
+Detection (Subscription) hu 
+In subscription.rs, the client watches for the 309 status. When it arrives, it tells the client to treat the next incoming version as a "first" version (snapshot), effectively wiping the local history for that resource.
+
+https://i.postimg.cc/zXHsjtKR/Screenshot-2026-01-26-200614.png
+
+<img src="https://i.postimg.cc/zXHsjtKR/Screenshot-2026-01-26-200614.png" style="max-height: 300px">
+
+Resolution (Sync/PUT)
+In sync.rs, if a PUT request fails with 309 (because the server rejected the version history), the client automatically retries with empty parents.
+
+<img src="https://i.postimg.cc/zf76B9Y1/Screenshot-2026-01-26-200645.png" style="max-height: 300px">
+
+
+
+How it helped BraidWiki
+The BraidWiki app uses braidfs to synchronize local markdown files with the server. Here is why 309 was a game-changer for it:
+
+Healing Divergence: In collaborative wiki editing, if two people edit a page and one peer's history becomes "corrupt" or incompatible (e.g., after a server rebase), standard Braid would error out or create a complex merge conflict. 309 allows the server to say "Just start over from this version," which fixes divergence instantly without manual user intervention.
+
+History Pruning: Wiki history can become thousands of versions long, slowing down CRDT merges. 309 provides a way to "checkpoint" the wiki. The server can send a 309 with a consolidated snapshot, allowing all clients to throw away the expensive old DAG and start fresh from version: "reborn-1".
+
+Zero-Configuration Sync: For a user, it means the wiki "just works." They don't see "Merge Conflict" or "Out of Date" errors; the system uses 309 behind the scenes to keep the local files in sync with the ground truth.
+
+
+
+Does it work with Antimatter?
+Yes, but with a slight caveat.
+In your current implementation, 309 Reborn works for content restoration, but it hasn't yet reached its full potential for history pruning in Antimatter.
+
+
+
+
+
+
+1. How it helps Antimatter in BraidWiki
+When your wiki got a 309, it forced the client to accept a full snapshot from the server. For the Antimatter CRDT, this meant:
+
+Healing: Even if the local CRDT state had diverged or had "fissures" that wouldn't close, the 309 forced a new root version that matched the server.
+
+Sync Success: It allowed the next PUT to succeed because the client started its version DAG over from the server's new "reborn" point.
+
+2. The Caveat: "Lazy" History Purge
+Currently, the code in subscription.rs sets is_first = true which resets the echo filter and forces a snapshot. However, because the active_merges map is not explicitly cleared, the old Antimatter history (the DAG of previous versions) actually stays in memory.
+
+The new "reborn" version is simply added as a new root to the existing DAG. To fully achieve what Mike proposed ("throw away old history on all peers"), we should modify the code to explicitly wipe the active_merges entry for that URL when a 309 is detected.
+
+
+
+Summa309 + Antimatter in BraidWiki
+
+Divergence Fix: It successfully reset the "text" you saw in the wiki, which is why the app felt "fixed."
+DAG Complexity: It didn't yet "shrink" the CRDT data structure size in memory (it's still carrying the old buried versions).
+The Fix: To get the memory benefits, the client needs to explicitly merges.remove(&url) when 309 is received.
+This status code is basically the "Panic Button" for CRDTs—it gives you a way to recover when the math of eventual consistency gets too messy or the history gets too heavy.
+
+
+### Mike: Proposal for `309 Reborn` Status Code
+
+What happens when a resource's version history is no longer valid, and peers need to restart from scratch?
+
+Request:
+
+    GET /foo HTTP/1.1
+    Subscribe: true
+
+Response:
+
+    HTTP/1.1 209 Multiresponse
+    Subscribe: true
+    Current-Version: "alice-1"
+
+    HTTP 200 OK
+    Version: "alice-1"
+    Content-Length: 5
+
+    Hello
+
+    HTTP 200 OK
+    Version: "bob-2"
+    Content-Length: 7
+    Content-Range: text 5:5
+
+     world!
+
+    HTTP 309 Reborn         <--- Proposed new status code
+    Version: "alice-0"
+    Content-Length: 14
+
+    Oh, hey there.
+
+
+The authority (e.g. "server", or authoritative peer) could use this when the state needs to reset, and all peers need to throw away their old history and start from scratch.
+
+  - When there's a bug, and the data got corrupted
+  - When you've refactored your code, and need to break compatibility with old peers
+  - When you want a cheap way to throw away old history on all peers
+  - When a server tries to PUT a version parented on a version that doesn't exist, it could interpret the response `4xx history doesn't exist` as a `309`, or the server could respond with a `309`.
+    - Or a server could keep track of peers that hasn't synced with it for a while, and ensure to `309` them upon a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+tually stays in memory.
+
+The new "reborn" version is simply added as a new root to the existing DAG. To fully achieve what Mike proposed ("throw away old history on all peers"), we should modify the code to explicitly wipe the active_merges entry for that URL when a 309 is detected.
+
+
+
+Summary: 309 + Antimatter in BraidWiki
+
+Divergence Fix: It successfully reset the "text" you saw in the wiki, which is why the app felt "fixed."
+DAG Complexity: It didn't yet "shrink" the CRDT data structure size in memory (it's still carrying the old buried versions).
+The Fix: To get the memory benefits, the client needs to explicitly merges.remove(&url) when 309 is received.
+This status code is basically the "Panic Button" for CRDTs—it gives you a way to recover when the math of eventual consistency gets too messy or the history gets too heavy.
+
+
+### Mike: Proposal for `309 Reborn` Status Code
+
+What happens when a resource's version history is no longer valid, and peers need to restart from scratch?
+
+Request:
+
+    GET /foo HTTP/1.1
+    Subscribe: true
+
+Response:
+
+    HTTP/1.1 209 Multiresponse
+    Subscribe: true
+    Current-Version: "alice-1"
+
+    HTTP 200 OK
+    Version: "alice-1"
+    Content-Length: 5
+
+    Hello
+
+    HTTP 200 OK
+    Version: "bob-2"
+    Content-Length: 7
+    Content-Range: text 5:5
+
+     world!
+
+    HTTP 309 Reborn         <--- Proposed new status code
+    Version: "alice-0"
+    Content-Length: 14
+
+    Oh, hey there.
+
+
+The authority (e.g. "server", or authoritative peer) could use this when the state needs to reset, and all peers need to throw away their old history and start from scratch.
+
+  - When there's a bug, and the data got corrupted
+  - When you've refactored your code, and need to break compatibility with old peers
+  - When you want a cheap way to throw away old history on all peers
+  - When a server tries to PUT a version parented on a version that doesn't exist, it could interpret the response `4xx history doesn't exist` as a `309`, or the server could respond with a `309`.
+    - Or a server could keep track of peers that hasn't synced with it for a while, and ensure to `309` them upon a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+for a whige.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+le, and ensure to `309` them upon a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+on a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+ory.
+
+
+
+
+on a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+on. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+hen recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+ror without rewriting the whole history.
+
+
+
+
+Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+ry: 309 + Antimatter in BraidWiki
+
+Divergence Fix: It successfully reset the "text" you saw in the wiki, which is why the app felt "fixed."
+DAG Complexity: It didn't yet "shrink" the CRDT data structure size in memory (it's still carrying the old buried versions).
+The Fix: To get the memory benefits, the client needs to explicitly merges.remove(&url) when 309 is received.
+This status code is basically the "Panic Button" for CRDTs—it gives you a way to recover when the math of eventual consistency gets too messy or the history gets too heavy.
+
+
+### Mike: Proposal for `309 Reborn` Status Code
+
+What happens when a resource's version history is no longer valid, and peers need to restart from scratch?
+
+Request:
+
+    GET /foo HTTP/1.1
+    Subscribe: true
+
+Response:
+
+    HTTP/1.1 209 Multiresponse
+    Subscribe: true
+    Current-Version: "alice-1"
+
+    HTTP 200 OK
+    Version: "alice-1"
+    Content-Length: 5
+
+    Hello
+
+    HTTP 200 OK
+    Version: "bob-2"
+    Content-Length: 7
+    Content-Range: text 5:5
+
+     world!
+
+    HTTP 309 Reborn         <--- Proposed new status code
+    Version: "alice-0"
+    Content-Length: 14
+
+    Oh, hey there.
+
+
+The authority (e.g. "server", or authoritative peer) could use this when the state needs to reset, and all peers need to throw away their old history and start from scratch.
+
+  - When there's a bug, and the data got corrupted
+  - When you've refactored your code, and need to break compatibility with old peers
+  - When you want a cheap way to throw away old history on all peers
+  - When a server tries to PUT a version parented on a version that doesn't exist, it could interpret the response `4xx history doesn't exist` as a `309`, or the server could respond with a `309`.
+    - Or a server could keep track of peers that hasn't synced with it for a while, and ensure to `309` them upon a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+tually stays in memory.
+
+The new "reborn" version is simply added as a new root to the existing DAG. To fully achieve what Mike proposed ("throw away old history on all peers"), we should modify the code to explicitly wipe the active_merges entry for that URL when a 309 is detected.
+
+
+
+Summary: 309 + Antimatter in BraidWiki
+
+Divergence Fix: It successfully reset the "text" you saw in the wiki, which is why the app felt "fixed."
+DAG Complexity: It didn't yet "shrink" the CRDT data structure size in memory (it's still carrying the old buried versions).
+The Fix: To get the memory benefits, the client needs to explicitly merges.remove(&url) when 309 is received.
+This status code is basically the "Panic Button" for CRDTs—it gives you a way to recover when the math of eventual consistency gets too messy or the history gets too heavy.
+
+
+### Mike: Proposal for `309 Reborn` Status Code
+
+What happens when a resource's version history is no longer valid, and peers need to restart from scratch?
+
+Request:
+
+    GET /foo HTTP/1.1
+    Subscribe: true
+
+Response:
+
+    HTTP/1.1 209 Multiresponse
+    Subscribe: true
+    Current-Version: "alice-1"
+
+    HTTP 200 OK
+    Version: "alice-1"
+    Content-Length: 5
+
+    Hello
+
+    HTTP 200 OK
+    Version: "bob-2"
+    Content-Length: 7
+    Content-Range: text 5:5
+
+     world!
+
+    HTTP 309 Reborn         <--- Proposed new status code
+    Version: "alice-0"
+    Content-Length: 14
+
+    Oh, hey there.
+
+
+The authority (e.g. "server", or authoritative peer) could use this when the state needs to reset, and all peers need to throw away their old history and start from scratch.
+
+  - When there's a bug, and the data got corrupted
+  - When you've refactored your code, and need to break compatibility with old peers
+  - When you want a cheap way to throw away old history on all peers
+  - When a server tries to PUT a version parented on a version that doesn't exist, it could interpret the response `4xx history doesn't exist` as a `309`, or the server could respond with a `309`.
+    - Or a server could keep track of peers that hasn't synced with it for a while, and ensure to `309` them upon a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+for a whige.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+le, and ensure to `309` them upon a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+on a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+ory.
+
+
+
+
+on a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+ ways to fix an error without rewriting the whole history.
+
+
+
+
+reate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+rsioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+on a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+ory.
+
+
+
+
+onhange.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+ a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+ to fix an error without rewriting the whole history.
+
+
+
+
+ory.
+
+
+
+
+on a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+le history.
+
+
+
+
+ory is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+hts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+for a whige.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+le, and ensure to `309` them upon a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+on a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+ory.
+
+
+
+
+on a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+ to fix an error without rewriting the whole history.
+
+
+
+
+ory.
+
+
+
+
+on a change.
+
+Thoughts?
+
+- Greg: Is this different from DELETEing?
+  - You could delete it with a version. And then recreate with a higher version.
+  - This would be a meta-versioning system. I like having a meta-versioning system.
+- Mike: We should at least consider how versioning works across DELETEs in our upcoming revision of the [versions spec](https://datatracker.ietf.org/doc/html/draft-toomim-httpbis-versions-02).
+- Musaab: Rewriting history is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+
+le history.
+
+
+
+
+ory is a dangerous operation. There are ways to fix an error without rewriting the whole history.
+
+
+
+

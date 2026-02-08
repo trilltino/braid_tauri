@@ -1,0 +1,63 @@
+[package]
+name = "local_link"
+version = "0.1.0"
+description = "LocalLink Application"
+authors = ["you"]
+edition = "2021"
+default-run = "local_link"
+
+[[bin]]
+name = "local_link"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0.0", features = [] }
+tauri-plugin-shell = "2.0.0"
+tauri-plugin-dialog = "2.0.0"
+tauri-plugin-fs = "2.0.0"
+tauri-plugin-http = "2.0.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1.49.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+sqlx = { version = "0.8.6", features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "sqlite",
+    "chrono",
+] }
+anyhow = "1.0"
+reqwest = { version = "0.13.1", features = ["json", "blocking"] }
+uuid = { version = "1.20.0", features = ["v4", "serde"] }
+chrono = { version = "0.4.43", features = ["serde"] }
+axum = "0.8.8"
+tower-http = { version = "0.6.8", features = ["cors"] }
+bcrypt = "0.18.0"
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
+futures = "0.3.31"
+base64 = "0.22.1"
+sha2 = "0.10.8"
+notify = "6.1.1"
+braid-http = { path = "../crates/braid-http" }
+braid-common = { path = "../crates/braid-common" }
+braid-core = { path = "../crates/braid-core", features = [
+    "blob",
+    "fs",
+    "client",
+    "server",
+    "nfs",
+] }
+braid-blob = { path = "../crates/braid-blob", features = ["native"] }
+genai = "0.5.2"
+urlencoding = "2.1.3"
+url = "2.5"
+dirs = "6.0"
+
+[features]
+# default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

@@ -15,8 +15,8 @@ pub struct VersionStore {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileVersion {
-    pub current_version: Vec<String>, // Braid versions are DAGs (set of IDs)
-    pub parents: Vec<String>,
+    pub current_version: Vec<Version>, // Braid versions are DAGs (set of IDs)
+    pub parents: Vec<Version>,
     /// Content hash for this version (SHA-256).
     #[serde(default)]
     pub content_hash: Option<String>,
@@ -62,8 +62,8 @@ impl VersionStore {
         self.file_versions.insert(
             url.to_string(),
             FileVersion {
-                current_version: version.iter().map(|v| v.to_string()).collect(),
-                parents: parents.iter().map(|v| v.to_string()).collect(),
+                current_version: version,
+                parents,
                 content_hash: None,
             },
         );
@@ -80,8 +80,8 @@ impl VersionStore {
         self.file_versions.insert(
             url.to_string(),
             FileVersion {
-                current_version: version.iter().map(|v| v.to_string()).collect(),
-                parents: parents.iter().map(|v| v.to_string()).collect(),
+                current_version: version,
+                parents,
                 content_hash: hash,
             },
         );
@@ -93,7 +93,7 @@ impl VersionStore {
 
     /// Get version by content hash.
     /// Matches JS `hash_to_version_cache` lookup from braidfs/index.js.
-    pub fn get_version_by_hash(&self, _fullpath: &str, hash: &str) -> Option<Vec<String>> {
+    pub fn get_version_by_hash(&self, _fullpath: &str, hash: &str) -> Option<Vec<Version>> {
         // Search all versions for matching hash
         for (_, fv) in &self.file_versions {
             if fv.content_hash.as_deref() == Some(hash) {

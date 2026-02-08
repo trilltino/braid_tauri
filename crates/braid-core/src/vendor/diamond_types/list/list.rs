@@ -207,7 +207,7 @@ impl ListCRDT {
         println!("Document of length {}", self.branch.len());
 
         println!("Content memory size: {}", format_size(
-            self.branch.content.borrow().mem_size(),
+            self.branch.content.mem_size(),
             BINARY
         ));
         println!("(Efficient size: {})", format_size(

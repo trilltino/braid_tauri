@@ -1,0 +1,144 @@
+﻿cargo :     Checking local_link_server v0.2.0 
+(C:\Users\isich\braid_tauri\crates\server)
+At line:1 char:1
++ cargo check -p local_link_server 2>&1 > server_check.txt
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Checking lo...\crate 
+   s\server):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: unused import: `error`
+  --> crates\server\src\chat\ai\mod.rs:18:22
+   |
+18 | use tracing::{debug, error, info, warn};
+   |                      ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `ChatUpdate`
+ --> crates\server\src\chat\crdt.rs:6:36
+  |
+6 | use crate::core::models::{BlobRef, ChatUpdate, Message, 
+MessageType};
+  |                                    ^^^^^^^^^^
+
+warning: unused import: `sqlx::sqlite::SqlitePoolOptions`
+ --> crates\server\src\chat\friends\mod.rs:9:5
+  |
+9 | use sqlx::sqlite::SqlitePoolOptions;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `delete`
+ --> crates\server\src\chat\handlers\mod.rs:6:26
+  |
+6 |     routing::{get, post, delete},
+  |                          ^^^^^^
+
+warning: unused import: `Multipart`
+  --> crates\server\src\chat\handlers\chat.rs:14:15
+   |
+14 |     extract::{Multipart, Path, State},
+   |               ^^^^^^^^^
+
+warning: unused import: `IntoResponse`
+  --> crates\server\src\chat\handlers\braid_subscribe.rs:41:16
+   |
+41 |     response::{IntoResponse, Response},
+   |                ^^^^^^^^^^^^
+
+warning: unused import: `debug`
+  --> crates\server\src\chat\mail\mod.rs:24:15
+   |
+24 | use tracing::{debug, error, info, warn};
+   |               ^^^^^
+
+warning: unused import: `Error`
+ --> crates\server\src\core\auth\handlers\auth_me.rs:4:26
+  |
+4 | use crate::core::error::{Error, Result};
+  |                          ^^^^^
+
+warning: unused import: `uuid::Uuid`
+ --> crates\server\src\core\models\mod.rs:4:5
+  |
+4 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `Json`
+  --> crates\server\src\website\handlers.rs:11:5
+   |
+11 |     Json,
+   |     ^^^^
+
+warning: unused import: `MergeResult`
+  --> crates\server\src\website\handlers.rs:16:5
+   |
+16 |     MergeResult,
+   |     ^^^^^^^^^^^
+
+warning: unused import: `braid_http::protocol::headers as 
+header_utils`
+  --> crates\server\src\website\handlers.rs:19:5
+   |
+19 | use braid_http::protocol::headers as header_utils;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `warn`
+  --> crates\server\src\website\handlers.rs:24:28
+   |
+24 | use tracing::{error, info, warn};
+   |                            ^^^^
+
+warning: unused variable: `message_type`
+   --> crates\server\src\chat\crdt.rs:128:25
+    |
+128 |                         message_type,
+    |                         ^^^^^^^^^^^^ help: try ignoring the 
+field: `message_type: _`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: fields `room_id`, `last_processed_version`, and 
+`pending_mentions` are never read
+  --> crates\server\src\chat\ai\mod.rs:65:5
+   |
+64 | struct AiRoomState {
+   |        ----------- fields in this struct
+65 |     room_id: String,
+   |     ^^^^^^^
+66 |     last_processed_version: Option<String>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+67 |     pending_mentions: Vec<String>,
+   |     ^^^^^^^^^^^^^^^^
+   |
+   = note: `AiRoomState` has derived impls for the traits `Debug` and 
+`Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` on by default
+
+warning: method `append_to_markdown` is never used
+   --> crates\server\src\chat\ai\mod.rs:414:14
+    |
+ 70 | impl AiChatManager {
+    | ------------------ method in this implementation
+...
+414 |     async fn append_to_markdown(
+    |              ^^^^^^^^^^^^^^^^^^
+
+warning: field `inner` is never read
+  --> crates\server\src\chat\crdt.rs:24:5
+   |
+23 | pub struct ChatCrdt {
+   |            -------- field in this struct
+24 |     inner: DiamondCRDT,
+   |     ^^^^^
+
+warning: struct `PageMeta` is never constructed
+  --> crates\server\src\website\handlers.rs:27:8
+   |
+27 | struct PageMeta {
+   |        ^^^^^^^^
+
+warning: `local_link_server` (lib) generated 18 warnings (run `cargo 
+fix --lib -p local_link_server` to apply 13 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 
+7.48s

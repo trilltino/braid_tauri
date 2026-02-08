@@ -16,21 +16,21 @@ pub async fn handle_fs_event(event: Event, state: DaemonState) {
 
         // Skip non-files if it's NOT a removal (e.g. it's a new directory)
         if !is_removal && !path.is_file() {
-            tracing::info!("[BraidFS] Skipping non-file: {:?}", path);
+            tracing::trace!("[BraidFS] Skipping non-file: {:?}", path);
             continue;
         }
 
         // Skip if this is a dotfile or inside a hidden directory (like .braidfs) or a .tmp file
         if path.components().any(|c| {
             let s = c.as_os_str().to_string_lossy();
-            s.starts_with('.') || s.ends_with(".tmp")
+            s.starts_with('.') || s.ends_with(".tmp") || s.ends_with(".sqlite") || s.ends_with("-journal") || s.ends_with(".db")
         }) {
             continue;
         }
 
         // Skip if this was a pending write from us (to avoid echo loops)
         if state.pending.should_ignore(&path) {
-            tracing::info!("[BraidFS] Skipping pending write: {:?}", path);
+            tracing::trace!("[BraidFS] Skipping pending write: {:?}", path);
             continue;
         }
 

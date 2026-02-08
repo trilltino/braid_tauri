@@ -66,6 +66,16 @@ impl Config {
             config.save().await?;
         }
 
+        // Validate cookies: warn if value looks like a URL (common mistake)
+        for (domain, token) in &config.cookies {
+            if token.starts_with("http://") || token.starts_with("https://") {
+                tracing::warn!(
+                    "!!! WARNING: Cookie for domain '{}' looks like a URL: '{}'. It should probably be a token string (e.g. 'ud8zp...').",
+                    domain, token
+                );
+            }
+        }
+
         Ok(config)
     }
 
@@ -112,6 +122,10 @@ fn default_ignore_patterns() -> Vec<String> {
         "*.swo".to_string(),
         "*~".to_string(),
         ".braidfs/**".to_string(),
+        "*.sqlite".to_string(),
+        "*.sqlite-journal".to_string(),
+        "*.db".to_string(),
+        "*.db-journal".to_string(),
     ]
 }
 
@@ -121,7 +135,7 @@ pub fn get_config_path() -> Result<PathBuf> {
 }
 
 pub fn get_root_dir() -> Result<PathBuf> {
-    let root_str = std::env::var("BRAID_ROOT").unwrap_or_else(|_| "braid_sync".to_string());
+    let root_str = std::env::var("BRAID_ROOT").unwrap_or_else(|_| "braid_data".to_string());
 
     let root = PathBuf::from(root_str);
     if let Ok(abs) = std::fs::canonicalize(&root) {
@@ -165,6 +179,14 @@ pub fn skip_file(path: &str) -> bool {
     if path.starts_with(".braidfs")
         && !path.starts_with(".braidfs/config")
         && !path.starts_with(".braidfs/errors")
+    {
+        return true;
+    }
+    if path.ends_with(".sqlite") 
+        || path.ends_with(".sqlite-journal") 
+        || path.ends_with(".db") 
+        || path.ends_with(".db-journal") 
+        || path.ends_with(".tmp")
     {
         return true;
     }

@@ -8,9 +8,11 @@ pub mod chat;
 pub mod friends;
 pub mod presence;
 pub mod typing;
+pub mod config;
+// Note: Pages functionality is in core::pages, not here
 
 // Re-export AppState from config
-pub use crate::config::AppState;
+pub use crate::core::config::AppState;
 
 // Auth handlers
 pub use auth::{list_users, login, logout, me, signup, update_profile};
@@ -34,3 +36,6 @@ pub use presence::{get_presence, update_presence};
 
 // Typing indicators
 pub use typing::{get_typing, update_typing as send_typing};
+
+// Config
+pub use config::set_daemon_cookie;

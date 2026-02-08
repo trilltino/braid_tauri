@@ -1,5 +1,5 @@
 use std::ops::Range;
-use jumprope::{JumpRope, JumpRopeBuf};
+use jumprope::JumpRope;
 use crate::vendor::diamond_types::list::{ListBranch, ListOpLog};
 use smartstring::SmartString;
 use crate::vendor::diamond_types::list::list::{apply_local_operations};
@@ -14,7 +14,7 @@ impl ListBranch {
     pub fn new() -> Self {
         Self {
             version: Frontier::root(),
-            content: JumpRopeBuf::new(),
+            content: JumpRope::new(),
         }
     }
 
@@ -48,7 +48,7 @@ impl ListBranch {
     /// Return the current document contents. Note there is no mutable variant of this method
     /// because mutating the document's content directly would violate the constraint that all
     /// changes must bump the document's version.
-    pub fn content(&self) -> &JumpRopeBuf { &self.content }
+    pub fn content(&self) -> &JumpRope { &self.content }
 
     /// Returns the document's content length.
     ///
@@ -95,7 +95,7 @@ impl ListBranch {
     pub fn make_delete_op(&self, loc: Range<usize>) -> TextOperation {
         assert!(loc.end <= self.content.len_chars());
         let mut s = SmartString::new();
-        s.extend(self.content.borrow().slice_chars(loc.clone()));
+        s.extend(self.content.slice_chars(loc.clone()));
         TextOperation::new_delete_with_content_range(loc, s)
     }
 
@@ -122,13 +122,13 @@ impl ListBranch {
 
     #[cfg(feature = "wchar_conversion")]
     pub fn insert_at_wchar(&mut self, oplog: &mut ListOpLog, agent: AgentId, wchar_pos: usize, ins_content: &str) -> LV {
-        let char_pos = self.content.borrow().wchars_to_chars(wchar_pos);
+        let char_pos = self.content.wchars_to_chars(wchar_pos);
         self.insert(oplog, agent, char_pos, ins_content)
     }
 
     #[cfg(feature = "wchar_conversion")]
     pub fn delete_at_wchar(&mut self, oplog: &mut ListOpLog, agent: AgentId, del_span_wchar: Range<usize>) -> LV {
-        let c = self.content.borrow();
+        let c = &self.content;
         let start_pos = c.wchars_to_chars(del_span_wchar.start);
         let end_pos = c.wchars_to_chars(del_span_wchar.end);
         drop(c);
@@ -137,7 +137,7 @@ impl ListBranch {
 
     /// Consume the Branch and return the contained rope content.
     pub fn into_inner(self) -> JumpRope {
-        self.content.into_inner()
+        self.content
     }
 }
 

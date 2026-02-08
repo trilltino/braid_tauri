@@ -1,0 +1,408 @@
+/* ChatBubble Styles */
+
+.chat-bubble {
+  max-width: 70%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  position: relative;
+  margin: 4px 0;
+  word-wrap: break-word;
+  cursor: context-menu;
+  transition: background-color 0.2s;
+}
+
+.chat-bubble:hover {
+  filter: brightness(0.98);
+}
+
+/* Own messages (right side) */
+.chat-bubble.own {
+  align-self: flex-end;
+  background: #dcf8c6;
+  margin-left: auto;
+  border-bottom-right-radius: 4px;
+}
+
+/* Other messages (left side) */
+.chat-bubble.other {
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-bottom-left-radius: 4px;
+}
+
+/* Deleted message */
+.chat-bubble.deleted {
+  background: transparent;
+  border: 1px dashed #ccc;
+  font-style: italic;
+  color: #999;
+  text-align: center;
+  padding: 8px 16px;
+}
+
+.deleted-text {
+  font-size: 0.9em;
+}
+
+/* Sender name */
+.sender-name {
+  font-size: 0.8em;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+/* Message content */
+.content {
+  font-size: 0.95em;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+/* Reply reference */
+.reply-ref {
+  background: rgba(0,0,0,0.05);
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  border-left: 3px solid #4a90d9;
+  font-size: 0.85em;
+}
+
+.reply-label {
+  color: #4a90d9;
+  font-weight: 500;
+  margin-right: 6px;
+}
+
+.reply-preview {
+  color: #666;
+  font-style: italic;
+}
+
+/* Bubble footer */
+.bubble-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.75em;
+  color: #999;
+}
+
+.timestamp {
+  cursor: default;
+}
+
+/* Edited badge */
+.edited-badge {
+  cursor: pointer;
+  color: #4a90d9;
+  text-decoration: underline;
+}
+
+.edited-badge:hover {
+  color: #357abd;
+}
+
+.chat-bubble.edited.own {
+  background: #c8f0a8;
+}
+
+/* Edit mode */
+.edit-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.edit-mode textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 0.95em;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.edit-actions button {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85em;
+}
+
+.edit-actions .save {
+  background: #4a90d9;
+  color: white;
+}
+
+.edit-actions .save:hover {
+  background: #357abd;
+}
+
+.edit-actions .cancel {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.edit-actions .cancel:hover {
+  background: #d0d0d0;
+}
+
+/* Attachments */
+.attachments {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attachment {
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.attachment:hover {
+  transform: scale(1.02);
+}
+
+.attachment.image img {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 8px;
+  display: block;
+}
+
+.attachment.video .video-thumb {
+  width: 120px;
+  height: 90px;
+  background: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.play-icon {
+  color: white;
+  font-size: 24px;
+}
+
+.attachment.file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(0,0,0,0.03);
+  border: 1px solid #e0e0e0;
+}
+
+.file-icon {
+  font-size: 24px;
+}
+
+.file-info {
+  flex: 1;
+}
+
+.filename {
+  font-weight: 500;
+  font-size: 0.9em;
+  color: #333;
+}
+
+.filesize {
+  font-size: 0.8em;
+  color: #999;
+  margin-top: 2px;
+}
+
+/* Reactions */
+.reactions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.reaction {
+  background: rgba(0,0,0,0.05);
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.reaction:hover {
+  background: rgba(0,0,0,0.1);
+}
+
+/* Context Menu */
+.context-menu {
+  position: fixed;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: 6px 0;
+  min-width: 180px;
+  z-index: 1000;
+}
+
+.context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.9em;
+  text-align: left;
+  color: #333;
+}
+
+.context-menu button:hover {
+  background: #f5f5f5;
+}
+
+.context-menu button.danger {
+  color: #d32f2f;
+}
+
+.context-menu button.danger:hover {
+  background: #ffebee;
+}
+
+.context-menu .icon {
+  font-size: 1.1em;
+  width: 20px;
+  text-align: center;
+}
+
+.menu-divider {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 6px 0;
+}
+
+/* Edit History Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.edit-history-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+
+.edit-history-modal h3 {
+  margin: 0 0 16px 0;
+  font-size: 1.2em;
+  color: #333;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-item {
+  padding: 12px;
+  border-radius: 8px;
+  background: #f8f9fa;
+  border-left: 3px solid #ddd;
+}
+
+.history-item.original {
+  border-left-color: #4caf50;
+}
+
+.history-item.edit {
+  border-left-color: #ff9800;
+}
+
+.history-item.current {
+  border-left-color: #2196f3;
+  background: #e3f2fd;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 0.85em;
+}
+
+.version-label {
+  font-weight: 600;
+  color: #666;
+}
+
+.time {
+  color: #999;
+}
+
+.history-content {
+  font-size: 0.95em;
+  color: #333;
+  line-height: 1.4;
+}
+
+.close-btn {
+  margin-top: 16px;
+  padding: 10px 24px;
+  background: #4a90d9;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95em;
+  width: 100%;
+}
+
+.close-btn:hover {
+  background: #357abd;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .chat-bubble {
+    max-width: 85%;
+  }
+  
+  .edit-history-modal {
+    margin: 16px;
+    width: auto;
+  }
+}

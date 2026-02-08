@@ -1,7 +1,7 @@
 use crate::core::{protocol_mod as protocol, BraidError, Result};
 use crate::fs::state::DaemonState;
 use crate::fs::PEER_ID;
-use braid_http::types::{BraidRequest, Version as BraidVersion};
+use braid_http::types::{BraidRequest, Version as BraidVersion, Patch};
 use std::path::PathBuf;
 use tracing::{error, info};
 
@@ -9,7 +9,7 @@ use tracing::{error, info};
 pub async fn sync_local_to_remote(
     _path: &PathBuf,
     url_in: &str,
-    parents: &[String],
+    parents: &[BraidVersion],
     _original_content: Option<String>,
     new_content: String,
     content_type: Option<String>,
@@ -23,11 +23,11 @@ pub async fn sync_local_to_remote(
 
     // 2. Standard Braid Protocol Path
     let mut request = BraidRequest::new().with_method("PUT");
-    let mut effective_parents = parents.to_vec();
+    let mut effective_parents: Vec<BraidVersion> = parents.to_vec();
 
     // Fetch server content first to check for conflicts (LWW check)
     let mut server_content: Option<String> = None;
-    let mut server_version: Option<String> = None;
+    let mut server_version: Option<BraidVersion> = None;
     
     if effective_parents.is_empty() {
         let mut head_req = BraidRequest::new()
@@ -67,14 +67,9 @@ pub async fn sync_local_to_remote(
             {
                 if let Ok(versions) = protocol::parse_version_header(v_header) {
                     for v in versions {
-                        let v_str = match v {
-                            BraidVersion::String(s) => s,
-                            BraidVersion::Integer(i) => i.to_string(),
-                        };
-                        let normalized = v_str.trim_matches('"').to_string();
-                        if !normalized.is_empty() {
-                            effective_parents.push(normalized.clone());
-                            server_version = Some(normalized);
+                        if !v.to_string().trim_matches('"').is_empty() {
+                            effective_parents.push(v.clone());
+                            server_version = Some(v);
                         }
                     }
                 }
@@ -95,8 +90,7 @@ pub async fn sync_local_to_remote(
         // Update version store
         if let Some(ref sv) = server_version {
             let mut store = state.version_store.write().await;
-            use braid_http::types::Version;
-            store.update(&url_str, vec![Version::from(sv.clone())], vec![]);
+            store.update(&url_str, vec![sv.clone()], vec![]);
             let _ = store.save().await;
         }
         
@@ -114,50 +108,143 @@ pub async fn sync_local_to_remote(
     }
 
     // Generate a new Version ID for this edit
-    // For braid.org, always use timestamp-based version to avoid CRDT conflicts
-    let new_version = if url_str.contains("braid.org") {
-        let peer_id = PEER_ID.read().await.clone();
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        format!("{}-{}", peer_id, ts)
-    } else {
+    // We utilize the SimpletonMergeType for all updates to ensure spec compliance (diffs + correct versioning)
+    let (new_version_id, patches, my_id) = {
+        // 1. Get cached content to allow hydration of merge state
+        let cached_content = {
+            let cache = state.content_cache.read().await;
+            cache.get(&url_str).cloned()
+        };
+
         let mut merges = state.active_merges.write().await;
-        let peer_id = PEER_ID.read().await.clone();
+        let peer_id = {
+            let config = state.config.read().await;
+            let mut id = config.peer_id.clone();
+            
+            // Use authenticated identity if available for this domain
+            if let Ok(u) = url::Url::parse(&url_str) {
+                if let Some(domain) = u.domain() {
+                    if let Some(email) = config.identities.get(domain) {
+                        id = email.clone();
+                        // Also try to extract username if it's an email
+                        if let Some((user, _)) = id.split_once('@') {
+                             id = user.to_string();
+                        }
+                    }
+                }
+            }
+            id
+        };
+        let my_id = peer_id.clone();
+        
+        // 2. Get or create merge type
         let merge = merges.entry(url_str.clone()).or_insert_with(|| {
+            info!("[BraidFS-Sync] Initializing Simpleton merge with peer_id: {}", peer_id);
             let mut m = state
                 .merge_registry
                 .create("simpleton", &peer_id)
                 .expect("Failed to create simpleton merge type");
-            m.initialize("");
+            // Initialize with cached content if available, otherwise empty
+            m.initialize(cached_content.as_deref().unwrap_or(""));
             m
         });
 
+        if merge.get_content().is_empty() && cached_content.as_ref().map(|s| !s.is_empty()).unwrap_or(false) {
+             merge.initialize(cached_content.as_deref().unwrap());
+        }
+
+        // Capture the *current* version (which will become the parent) BEFORE applying the edit
+        let current_ver_before_edit = merge.get_version().first().cloned();
+
         let patch = crate::core::merge::MergePatch::new("everything", serde_json::Value::String(new_content.clone()));
         let res = merge.local_edit(patch);
-        res.version.unwrap_or_else(|| format!("{}-{}", peer_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()))
+        
+        let ver = res.version.unwrap_or_else(|| BraidVersion::new(format!("{}-{}", peer_id, 0)));
+
+        // Add the *previous* version to effective_parents
+        if let Some(pv) = current_ver_before_edit {
+            if !effective_parents.contains(&pv) {
+                effective_parents.push(pv);
+            }
+        }
+ 
+        (ver, res.rebased_patches, my_id)
     };
 
-    request = request.with_version(BraidVersion::new(&new_version));
-    info!("[BraidFS-Sync] Using version: {}", new_version);
+    // Guard: If no patches were generated, it means local content matches the current merge state.
+    // We skip the PUT to avoid sending a duplicate version ID which would trigger a 500 on braid.org.
+    if patches.is_empty() {
+        info!("[BraidFS-Sync] No local changes detected for {} - skipping PUT", url_str);
+        return Ok(());
+    }
 
-    // For braid.org, omit Parents header to avoid 309 conflicts
-    if !url_str.contains("braid.org") && !effective_parents.is_empty() {
+    info!("[BraidFS-Sync] Using version: {} (Peer: {})", new_version_id, my_id);
+
+    if !effective_parents.is_empty() {
         let filtered_parents: Vec<BraidVersion> = effective_parents
             .iter()
-            .filter(|p| !p.starts_with("temp-") && !p.starts_with("missing-"))
-            .map(|p| BraidVersion::new(p))
+            .filter(|p| !p.to_string().starts_with("temp-") && !p.to_string().starts_with("missing-"))
+            .cloned()
             .collect();
 
-        if !filtered_parents.is_empty() {
-            request = request.with_parents(filtered_parents);
+        // 3. Self-Healing: Flatten self-forks.
+        // If we have multiple parents from the SAME peer (us or others), it might confuse simpleton servers.
+        // We pick the "latest" one per peer (lexically).
+        use std::collections::HashMap;
+        let mut latest_per_peer: HashMap<String, BraidVersion> = HashMap::new();
+        for p in filtered_parents {
+            let p_str = p.to_string();
+            let parts: Vec<&str> = p_str.split('-').collect();
+            if parts.len() >= 2 {
+                let peer = parts[0];
+                let ver_str = parts[1];
+                if let Some(existing) = latest_per_peer.get(peer) {
+                    let existing_str = existing.to_string();
+                    let existing_ver = existing_str.split('-').last().unwrap_or("0");
+                    if ver_str > existing_ver {
+                        latest_per_peer.insert(peer.to_string(), p);
+                    }
+                } else {
+                    latest_per_peer.insert(peer.to_string(), p);
+                }
+            } else {
+                // If it doesn't follow peer-ver format, keep it anyway
+                latest_per_peer.insert(p_str, p);
+            }
+        }
+        effective_parents = latest_per_peer.into_values().collect();
+
+        if !effective_parents.is_empty() {
+            let p_strings: Vec<String> = effective_parents.iter().map(|p| p.to_string()).collect();
+            info!("[BraidFS-Sync] Setting Parents (flattened): {:?}", p_strings);
+            request = request.with_parents(effective_parents.clone());
         }
     }
 
     let ct = content_type.unwrap_or_else(|| "text/plain".to_string());
     request = request.with_content_type(ct);
-    let mut final_request = request.with_body(new_content.clone());
+
+    // Convert patches to Braid patches logic
+    if !patches.is_empty() {
+        let http_patches: Vec<Patch> = patches.into_iter().map(|mp| {
+            let content_bytes = match mp.content {
+                serde_json::Value::String(s) => bytes::Bytes::from(s),
+                val => bytes::Bytes::from(val.to_string()),
+            };
+            
+            Patch {
+                unit: "json".to_string(), // Simpleton ranges use json unit
+                range: mp.range,
+                content: content_bytes,
+                content_length: None, 
+            }
+        }).collect();
+        request = request.with_patches(http_patches);
+    } else {
+         request = request.with_body(new_content.clone());
+    }
+    
+    let mut final_request = request;
 
     if let Ok(u) = url::Url::parse(&url_str) {
         if let Some(domain) = u.domain() {
@@ -192,9 +279,9 @@ pub async fn sync_local_to_remote(
                 {
                     let mut store = state.version_store.write().await;
                     use braid_http::types::Version;
-                    store.update(&url_str, vec![Version::from(new_version.clone())], effective_parents.iter().map(|v| Version::from(v.clone())).collect());
+                    store.update(&url_str, vec![Version::from(new_version_id.clone())], effective_parents.iter().map(|v| Version::from(v.clone())).collect());
                     match store.save().await {
-                        Ok(_) => info!("[BraidFS-Sync] Updated version store to: {}", new_version),
+                        Ok(_) => info!("[BraidFS-Sync] Updated version store to: {}", new_version_id),
                         Err(e) => error!("[BraidFS-Sync] Failed to save version store: {}", e),
                     }
                 }
@@ -222,7 +309,7 @@ pub async fn sync_local_to_remote(
 pub async fn sync_binary_to_remote(
     _path: &std::path::Path,
     url_in: &str,
-    parents: &[String],
+    parents: &[BraidVersion],
     data: bytes::Bytes,
     content_type: Option<String>,
     state: DaemonState,
@@ -243,13 +330,9 @@ pub async fn sync_binary_to_remote(
             if let Some(v_header) = res.header("version").or(res.header("current-version")) {
                 if let Ok(versions) = protocol::parse_version_header(v_header) {
                     for v in versions {
-                        let v_str = match v {
-                            BraidVersion::String(s) => s,
-                            BraidVersion::Integer(i) => i.to_string(),
-                        };
-                        let normalized = v_str.trim_matches('"').to_string();
+                        let normalized = v.to_string().trim_matches('"').to_string();
                         if !normalized.is_empty() {
-                            effective_parents.push(normalized);
+                            effective_parents.push(braid_http::types::Version::String(normalized));
                         }
                     }
                 }
@@ -265,14 +348,18 @@ pub async fn sync_binary_to_remote(
     request = request.with_version(BraidVersion::new(&new_version));
 
     // Add parents
+    request = request.with_version(BraidVersion::new(&new_version));
+    
     if !effective_parents.is_empty() {
-        let filtered_parents: Vec<BraidVersion> = effective_parents
-            .iter()
-            .filter(|p| !p.starts_with("temp-") && !p.starts_with("missing-"))
-            .map(|p| BraidVersion::new(p))
+        let final_parents: Vec<BraidVersion> = effective_parents.iter()
+            .filter(|p| {
+                let s = p.to_string();
+                !s.starts_with("temp-") && !s.starts_with("missing-")
+            })
+            .map(|p| p.clone())
             .collect();
-        if !filtered_parents.is_empty() {
-            request = request.with_parents(filtered_parents);
+        if !final_parents.is_empty() {
+            request = request.with_parents(final_parents);
         }
     }
 

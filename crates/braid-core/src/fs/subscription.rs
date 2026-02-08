@@ -202,6 +202,9 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
         sub_req = sub_req.with_merge_type("simpleton");
     }
 
+    let my_id = PEER_ID.read().await.clone();
+    sub_req = sub_req.with_peer(my_id);
+
     // Add Authentication Headers
     if let Ok(u) = url::Url::parse(&url) {
         if let Some(domain) = u.domain() {
@@ -249,10 +252,10 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
         {
             let store = state.version_store.read().await;
             if let Some(file_version) = store.file_versions.get(&url) {
-                let fetched_version: Vec<String> = update.version.iter().map(|v| v.to_string()).collect();
+                let fetched_version = update.version.clone();
                 if file_version.current_version == fetched_version {
-                    tracing::info!("[BraidFS-Sub] Version {} already current for {}, continuing to listen", 
-                        fetched_version.join(","), url);
+                    tracing::info!("[BraidFS-Sub] Version {:?} already current for {}, continuing to listen", 
+                        fetched_version, url);
                     continue;  // Keep subscription alive, don't return!
                 }
             }
@@ -301,8 +304,8 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
                         let patch = crate::core::merge::MergePatch {
                             range: "".to_string(),
                             content: serde_json::Value::String(body.to_string()),
-                            version: update.primary_version().map(|v| v.to_string()),
-                            parents: update.parents.iter().map(|p| p.to_string()).collect(),
+                            version: update.primary_version().cloned(),
+                            parents: update.parents.clone(),
                         };
                         merge.apply_patch(patch);
                         merge.get_content()
@@ -407,10 +410,15 @@ pub async fn subscribe_loop(url: String, state: DaemonState) -> Result<()> {
                 let merge_patch = crate::core::merge::MergePatch {
                     range: patch.range.clone(),
                     content: serde_json::Value::String(patch_content.to_string()),
-                    version: update.primary_version().map(|v| v.to_string()),
-                    parents: update.parents.iter().map(|p| p.to_string()).collect(),
+                    version: update.primary_version().cloned(),
+                    parents: update.parents.clone(),
                 };
-                merge.apply_patch(merge_patch);
+                let result = merge.apply_patch(merge_patch);
+                if !result.success {
+                    let error_msg = result.error.unwrap_or_else(|| "Unknown merge error".to_string());
+                    tracing::error!("[BraidFS] Merge failed for {}: {}. Triggering re-sync...", url, error_msg);
+                    return Err(crate::core::BraidError::Internal(format!("Merge failed: {}", error_msg)));
+                }
             }
             merge.get_content()
         };

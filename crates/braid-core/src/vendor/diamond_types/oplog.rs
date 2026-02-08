@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use smallvec::smallvec;
 use std::cmp::Ordering;
-use jumprope::JumpRopeBuf;
+use jumprope::JumpRope;
 use smartstring::alias::String as SmartString;
 
 #[cfg(feature = "serde")]
@@ -386,10 +386,10 @@ impl OpLog {
         create_to_snapshot(*v, value)
     }
 
-    pub fn checkout_text(&self, crdt: LVKey) -> JumpRopeBuf {
+    pub fn checkout_text(&self, crdt: LVKey) -> JumpRope {
         let info = self.texts.get(&crdt).unwrap();
 
-        let mut result = JumpRopeBuf::new();
+        let mut result = JumpRope::new();
         info.merge_into(&mut result, &self.cg, &[], self.cg.version.as_ref());
         result
     }

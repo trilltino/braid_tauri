@@ -1,0 +1,99 @@
+/* Navbar Styles */
+.docs-header {
+  height: 64px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 48px;
+  /* background-color: var(--color-bg-primary); Remove background for flexibility, or override in Home */
+  background-color: var(--color-bg-primary); /* Default to solid for docs, override for home if needed */
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-left,
+.header-right {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+}
+
+.header-link {
+  font-family: var(--font-brand); /* Ensure consistent font */
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color var(--transition-speed);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 64px;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.header-link:hover {
+  color: var(--color-text-primary);
+}
+
+.header-link.active {
+  color: var(--color-text-primary);
+}
+
+/* Dropdown Styles */
+.nav-dropdown {
+  position: relative;
+  height: 64px;
+  display: flex;
+  align-items: center;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 180px;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px);
+  transition: all var(--transition-speed) ease;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  z-index: 200;
+}
+
+.nav-dropdown:hover .dropdown-menu {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.dropdown-item {
+  display: block;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  border-radius: 6px;
+  transition: all var(--transition-speed) ease;
+}
+
+.dropdown-item:hover {
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-elevated);
+}
+
+.login-link {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+/* Responsive/Home overrides can go here or in specific CSS */

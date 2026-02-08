@@ -536,7 +536,7 @@ impl ListOpLog {
             }
         }
 
-        let resulting_content = self.checkout_tip().content;
+        let resulting_content = &self.checkout_tip().content;
 
         ListOpLogStats {
             op_stats: self.operations.get_stats(),

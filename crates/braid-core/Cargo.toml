@@ -26,7 +26,6 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 default = [
     "server",
     "client",
-    "antimatter",
     "blob",
     "fs",
     "smallvec",
@@ -54,7 +53,6 @@ server = [
     "smallvec",
 ]
 client = []
-antimatter = ["serde", "smallvec"]
 blob = ["dep:braid-blob", "serde", "smallvec", "native"]
 fs = ["dep:dissimilar", "blob", "serde", "smallvec", "native"]
 smallvec = []
@@ -88,32 +86,30 @@ async-trait = "0.1"
 async-channel = "2.3"
 
 # Utilities
-bytes = { version = "1.10.0", features = ["serde"] }
+bytes = { version = "1.11.1", features = ["serde"] }
 uuid = { version = "1.20.0", features = ["v4", "serde", "js"] }
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = { version = "2.0" }
-anyhow = "1.0"
+anyhow = "1.0.101"
 parking_lot = "0.12"
 base64 = "0.22"
 url = "2.5"
 once_cell = "1.18"
 chrono = { version = "0.4.43", features = ["serde"] }
 rand = "0.9"
-regex = "1.10"
+regex = "1.12.3"
 percent-encoding = "2.3"
-
-# Diamond-Types dependencies (Vendored)
+lazy_static = "1.4.0"
+smallvec = { version = "1.15.1", features = ["serde"] }
+lz4_flex = { version = "0.12.0", optional = true }
 smartstring = { version = "1.0.1", features = ["serde"] }
 str_indices = "0.4.3"
-smallvec = { version = "2.0.0-alpha.6", features = ["serde"] }
-lazy_static = "1.4.0"
 bumpalo = { version = "3.16.0", features = ["collections"] }
 jumprope = "1.1.2"
 humansize = "2.0.0"
 num_enum = "0.7.2"
 crc = "3.0.0"
-lz4_flex = { version = "0.11.3", optional = true }
 libc = "0.2.139"
 
 # Client
@@ -124,12 +120,12 @@ reqwest = { version = "0.13.1", features = [
 ], optional = true }
 
 # Storage (for blob)
-rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+rusqlite = { version = "0.32.1", optional = true }
 
 # Filesystem (for fs)
-notify = { version = "6.1", optional = true }
-clap = { version = "4.5", features = ["derive"], optional = true }
-dirs = { version = "5.0", optional = true }
+notify = { version = "8.2.0", optional = true }
+clap = { version = "4.5.57", features = ["derive"], optional = true }
+dirs = { version = "6.0.0", optional = true }
 dissimilar = { version = "1.0.10", optional = true }
 sha2 = "0.10.9"
 nfsserve = { version = "0.10", optional = true }
@@ -138,7 +134,7 @@ braid-blob = { path = "../braid-blob", optional = true }
 
 
 [dev-dependencies]
-lz4_flex = "0.11.3"
+lz4_flex = "0.12.0"
 tempfile = "3.10"
 
 [lib]

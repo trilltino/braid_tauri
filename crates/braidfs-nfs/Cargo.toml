@@ -8,7 +8,6 @@ braid-core = { path = "../braid-core", features = [
     "fs",
     "client",
     "server",
-    "antimatter",
     "nfs",
 ] }
 tokio = { version = "1.48", features = ["full"] }

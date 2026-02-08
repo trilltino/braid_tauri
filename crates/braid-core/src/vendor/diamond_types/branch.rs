@@ -182,7 +182,7 @@ impl Branch {
     }
 
     /// Returns the list of version ranges which were merged, in reverse order (!!!)
-    pub fn merge_changes_to_tip(&mut self, oplog: &OpLog) -> SmallVec<DTRange, 4> {
+    pub fn merge_changes_to_tip(&mut self, oplog: &OpLog) -> SmallVec<[DTRange; 4]> {
         // Well, for now nothing can be deleted yet. So that makes things easier.
         let diff_rev = oplog.cg.diff_since_rev(self.frontier.as_ref());
 
@@ -218,7 +218,7 @@ impl Branch {
                 if oplog.deleted_crdts.contains(text_crdt) { continue; }
 
                 let textinfo = oplog.texts.get(text_crdt).unwrap();
-                let text_content = self.texts.entry(*text_crdt).or_default();
+                let text_content = self.texts.entry(*text_crdt).or_insert_with(jumprope::JumpRope::new);
 
                 textinfo.merge_into(text_content, &oplog.cg, self.frontier.as_ref(), oplog.cg.version.as_ref());
             }

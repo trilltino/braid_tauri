@@ -1,5 +1,5 @@
 use std::ops::Range;
-use jumprope::JumpRopeBuf;
+use jumprope::JumpRope;
 use smartstring::SmartString;
 use crate::vendor::rle::HasLength;
 use crate::vendor::diamond_types::list::operation::TextOperation;
@@ -17,7 +17,7 @@ pub(crate) struct SimpleOpLog {
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub(crate) struct SimpleBranch {
-    pub content: JumpRopeBuf,
+    pub content: JumpRope,
 
     // Always points to a version in the subgraph.
     pub version: Frontier,
@@ -70,12 +70,12 @@ impl SimpleOpLog {
     }
 
     pub(crate) fn to_string(&self) -> String {
-        let mut result = JumpRopeBuf::new();
+        let mut result = JumpRope::new();
         self.info.merge_into(&mut result, &self.cg, &[], self.cg.version.as_ref());
         result.to_string()
     }
 
-    pub(crate) fn merge_raw(&self, into: &mut JumpRopeBuf, from: &[LV], to: &[LV]) -> Frontier {
+    pub(crate) fn merge_raw(&self, into: &mut JumpRope, from: &[LV], to: &[LV]) -> Frontier {
         self.info.merge_into(into, &self.cg, from, to)
     }
 
@@ -109,7 +109,7 @@ impl SimpleBranch {
     pub fn make_delete_op(&self, loc: Range<usize>) -> TextOperation {
         assert!(loc.end <= self.content.len_chars());
         let mut s = SmartString::new();
-        s.extend(self.content.borrow().slice_chars(loc.clone()));
+        s.extend(self.content.slice_chars(loc.clone()));
         TextOperation::new_delete_with_content_range(loc, s)
     }
 }
